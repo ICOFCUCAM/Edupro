@@ -1,0 +1,390 @@
+import React, { useState, useRef } from 'react';
+import { supabase } from '@/lib/supabase';
+import { REGIONS, COUNTRIES_WITH_LEVELS, SUBJECTS } from '@/lib/constants';
+import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2 } from 'lucide-react';
+
+interface LessonGeneratorProps {
+  teacherId?: string;
+  onLessonSaved?: () => void;
+}
+
+const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSaved }) => {
+  const [formData, setFormData] = useState({
+    country: 'Nigeria', subject: 'Mathematics', topic: '',
+    level: 'Primary 3', week: '1', language: 'English', additionalNotes: ''
+  });
+  const [loading, setLoading] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [lessonNote, setLessonNote] = useState<any>(null);
+  const [error, setError] = useState('');
+  const printRef = useRef<HTMLDivElement>(null);
+
+  const countryData = COUNTRIES_WITH_LEVELS[formData.country];
+  const levels = countryData?.levels || ['Primary 1', 'Primary 2', 'Primary 3'];
+  const curriculum = countryData?.curriculum || 'National Curriculum';
+
+  const handleChange = (field: string, value: string) => {
+    setFormData(prev => {
+      const updated = { ...prev, [field]: value };
+      if (field === 'country') {
+        const newLevels = COUNTRIES_WITH_LEVELS[value]?.levels || [];
+        updated.level = newLevels[0] || 'Primary 1';
+      }
+      return updated;
+    });
+  };
+
+  const generateLesson = async () => {
+    if (!formData.topic.trim()) { setError('Please enter a topic'); return; }
+    setError('');
+    setLoading(true);
+    setLessonNote(null);
+    setSaved(false);
+
+    try {
+      const { data, error: fnError } = await supabase.functions.invoke('generate-lesson-note', {
+        body: formData
+      });
+
+      if (fnError) throw fnError;
+      if (data?.success) {
+        setLessonNote(data.lessonNote);
+      } else {
+        throw new Error(data?.error || 'Failed to generate lesson note');
+      }
+    } catch (err: any) {
+      setError(err.message || 'Failed to generate. Please try again.');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const saveLesson = async () => {
+    if (!lessonNote || !teacherId) return;
+    setSaving(true);
+    try {
+      const region = REGIONS.find(r => r.countries.includes(formData.country))?.name || 'West Africa';
+      const { error: saveErr } = await supabase.from('lesson_notes').insert({
+        teacher_id: teacherId,
+        title: lessonNote.title || `${formData.subject} - ${formData.topic}`,
+        subject: formData.subject,
+        topic: formData.topic,
+        country: formData.country,
+        region,
+        level: formData.level,
+        class_name: formData.level,
+        language: formData.language,
+        content: lessonNote,
+        status: 'draft',
+      });
+
+      if (saveErr) throw saveErr;
+
+      // Increment lesson count
+      await supabase.from('teachers').update({
+        lesson_count: supabase.rpc ? undefined : undefined, // handled by hook
+      }).eq('id', teacherId);
+
+      setSaved(true);
+      onLessonSaved?.();
+    } catch (err: any) {
+      console.error('Save error:', err);
+      setError('Failed to save lesson note.');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handlePrint = () => {
+    const content = printRef.current;
+    if (!content) return;
+    const printWindow = window.open('', '_blank');
+    if (!printWindow) return;
+    printWindow.document.write(`
+      <html><head><title>Lesson Note - ${formData.topic}</title>
+      <style>
+        body { font-family: 'Times New Roman', serif; padding: 20px; color: #000; }
+        table { width: 100%; border-collapse: collapse; margin: 20px 0; }
+        th, td { border: 1px solid #333; padding: 8px 10px; text-align: left; font-size: 12px; }
+        th { background-color: #1e40af; color: white; font-weight: bold; }
+        tr:nth-child(even) { background-color: #f0f4ff; }
+        h1 { text-align: center; color: #1e40af; font-size: 22px; margin-bottom: 5px; }
+        h2 { text-align: center; color: #333; font-size: 16px; margin-bottom: 20px; }
+        .metadata { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 20px; font-size: 13px; }
+        .metadata div { padding: 4px 0; }
+        .metadata strong { color: #1e40af; }
+        .notes { margin-top: 20px; padding: 15px; background: #f8fafc; border-left: 4px solid #1e40af; font-size: 13px; }
+        @media print { body { padding: 10px; } }
+      </style></head><body>
+      ${content.innerHTML}
+      </body></html>
+    `);
+    printWindow.document.close();
+    printWindow.print();
+  };
+
+  const renderLessonTable = () => {
+    if (!lessonNote) return null;
+    const columns = lessonNote.columns || [];
+    const rows = lessonNote.rows || [];
+
+    return (
+      <div ref={printRef}>
+        <h1 style={{ textAlign: 'center', color: '#1e40af', fontSize: '22px', marginBottom: '5px' }}>
+          {lessonNote.title || `${formData.subject} - ${formData.topic}`}
+        </h1>
+        <h2 style={{ textAlign: 'center', color: '#666', fontSize: '14px', marginBottom: '20px' }}>
+          {curriculum} | {formData.country}
+        </h2>
+
+        {lessonNote.metadata && (
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '20px', fontSize: '13px' }}>
+            {Object.entries(lessonNote.metadata).map(([key, val]) => (
+              <div key={key}><strong style={{ color: '#1e40af', textTransform: 'capitalize' }}>{key.replace(/_/g, ' ')}:</strong> {String(val)}</div>
+            ))}
+          </div>
+        )}
+
+        <div className="overflow-x-auto">
+          <table className="w-full border-collapse text-sm">
+            <thead>
+              <tr>
+                {columns.map((col: string, i: number) => (
+                  <th key={i} className="bg-blue-700 text-white px-3 py-2 text-left text-xs font-semibold border border-blue-800 whitespace-nowrap">
+                    {col}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((row: any, ri: number) => (
+                <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
+                  {columns.map((col: string, ci: number) => (
+                    <td key={ci} className="px-3 py-2 border border-gray-200 text-xs text-gray-700 align-top min-w-[120px]">
+                      {row[col] || '-'}
+                    </td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+
+        {(lessonNote.teacherNotes || lessonNote.differentiationStrategies || lessonNote.crossCurricularLinks) && (
+          <div style={{ marginTop: '20px' }}>
+            {lessonNote.teacherNotes && (
+              <div style={{ padding: '15px', background: '#f0fdf4', borderLeft: '4px solid #059669', marginBottom: '10px', fontSize: '13px' }}>
+                <strong>Teacher's Notes:</strong> {lessonNote.teacherNotes}
+              </div>
+            )}
+            {lessonNote.differentiationStrategies && (
+              <div style={{ padding: '15px', background: '#eff6ff', borderLeft: '4px solid #2563eb', marginBottom: '10px', fontSize: '13px' }}>
+                <strong>Differentiation Strategies:</strong> {lessonNote.differentiationStrategies}
+              </div>
+            )}
+            {lessonNote.crossCurricularLinks && (
+              <div style={{ padding: '15px', background: '#fefce8', borderLeft: '4px solid #ca8a04', fontSize: '13px' }}>
+                <strong>Cross-Curricular Links:</strong> {lessonNote.crossCurricularLinks}
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-gradient-to-r from-blue-700 to-blue-900 text-white py-12 px-4">
+        <div className="max-w-7xl mx-auto">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
+              <Sparkles className="w-6 h-6" />
+            </div>
+            <div>
+              <h1 className="text-3xl font-bold">AI Lesson Note Generator</h1>
+              <p className="text-blue-200">Create curriculum-aligned lesson notes in seconds</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="max-w-7xl mx-auto px-4 -mt-6">
+        <div className="grid lg:grid-cols-3 gap-6">
+          {/* Form */}
+          <div className="lg:col-span-1">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 sticky top-24">
+              <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <FileText className="w-5 h-5 text-blue-600" />
+                Lesson Details
+              </h2>
+
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                  <select value={formData.country} onChange={e => handleChange('country', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white">
+                    {REGIONS.map(region => (
+                      <optgroup key={region.id} label={region.name}>
+                        {region.countries.filter(c => COUNTRIES_WITH_LEVELS[c]).map(c => (
+                          <option key={c} value={c}>{c}</option>
+                        ))}
+                      </optgroup>
+                    ))}
+                  </select>
+                  <p className="text-xs text-gray-400 mt-1">{curriculum}</p>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Class / Level</label>
+                  <select value={formData.level} onChange={e => handleChange('level', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white">
+                    {levels.map(l => <option key={l} value={l}>{l}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Subject</label>
+                  <select value={formData.subject} onChange={e => handleChange('subject', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white">
+                    {SUBJECTS.map(s => <option key={s} value={s}>{s}</option>)}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Topic <span className="text-red-500">*</span></label>
+                  <input type="text" value={formData.topic} onChange={e => handleChange('topic', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm"
+                    placeholder="e.g., Addition and Subtraction" />
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Week</label>
+                  <select value={formData.week} onChange={e => handleChange('week', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white">
+                    {Array.from({ length: 14 }, (_, i) => (
+                      <option key={i + 1} value={String(i + 1)}>Week {i + 1}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
+                  <select value={formData.language} onChange={e => handleChange('language', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white">
+                    <option value="English">English</option>
+                    <option value="French">French</option>
+                    <option value="Spanish">Spanish</option>
+                    <option value="Swahili">Swahili</option>
+                    <option value="Hausa">Hausa</option>
+                    <option value="Yoruba">Yoruba</option>
+                    <option value="Amharic">Amharic</option>
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Additional Notes</label>
+                  <textarea value={formData.additionalNotes} onChange={e => handleChange('additionalNotes', e.target.value)}
+                    className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm resize-none"
+                    rows={3} placeholder="Any specific requirements..." />
+                </div>
+
+                {error && <div className="text-red-500 text-sm bg-red-50 p-3 rounded-xl">{error}</div>}
+
+                <button onClick={generateLesson} disabled={loading}
+                  className="w-full py-3 bg-gradient-to-r from-blue-600 to-emerald-500 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-200 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
+                  {loading ? (
+                    <><Loader2 className="w-5 h-5 animate-spin" /> Generating...</>
+                  ) : (
+                    <><Sparkles className="w-5 h-5" /> Generate Lesson Note</>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+
+          {/* Preview */}
+          <div className="lg:col-span-2">
+            <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 min-h-[600px]">
+              {/* Toolbar */}
+              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+                <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
+                  <BookOpen className="w-5 h-5 text-blue-600" />
+                  Lesson Note Preview
+                </h2>
+                {lessonNote && (
+                  <div className="flex items-center gap-2">
+                    {teacherId && (
+                      <button onClick={saveLesson} disabled={saving || saved}
+                        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                          saved ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                        }`}>
+                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                        {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
+                      </button>
+                    )}
+                    <button onClick={handlePrint} className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-all">
+                      <Printer className="w-4 h-4" /> Print / PDF
+                    </button>
+                    <button onClick={() => { setLessonNote(null); setFormData(p => ({ ...p, topic: '' })); setSaved(false); }}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-gray-50 text-gray-600 rounded-lg text-sm font-medium hover:bg-gray-100 transition-all">
+                      <RotateCcw className="w-4 h-4" /> New
+                    </button>
+                  </div>
+                )}
+              </div>
+
+              {/* Content */}
+              {loading ? (
+                <div className="flex flex-col items-center justify-center py-24">
+                  <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mb-4">
+                    <Loader2 className="w-8 h-8 text-blue-600 animate-spin" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">Generating Your Lesson Note</h3>
+                  <p className="text-gray-500 text-sm text-center max-w-md">
+                    Our AI is creating a detailed, curriculum-aligned lesson note for {formData.country}'s {curriculum}. This may take 15-30 seconds...
+                  </p>
+                  <div className="mt-6 w-64 h-2 bg-gray-100 rounded-full overflow-hidden">
+                    <div className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full animate-pulse" style={{ width: '70%' }} />
+                  </div>
+                </div>
+              ) : lessonNote ? (
+                <div className="overflow-x-auto">
+                  {renderLessonTable()}
+                </div>
+              ) : (
+                <div className="flex flex-col items-center justify-center py-24 text-center">
+                  <div className="w-20 h-20 bg-gray-100 rounded-2xl flex items-center justify-center mb-4">
+                    <FileText className="w-10 h-10 text-gray-300" />
+                  </div>
+                  <h3 className="text-lg font-semibold text-gray-900 mb-2">No Lesson Note Yet</h3>
+                  <p className="text-gray-500 text-sm max-w-md">
+                    Fill in the lesson details on the left and click "Generate Lesson Note" to create a curriculum-aligned lesson note formatted for your country's education system.
+                  </p>
+                  <div className="mt-6 grid grid-cols-3 gap-3 text-xs text-gray-400">
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="font-medium text-gray-600 mb-1">Step 1</div>
+                      Select country & class
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="font-medium text-gray-600 mb-1">Step 2</div>
+                      Choose subject & topic
+                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3">
+                      <div className="font-medium text-gray-600 mb-1">Step 3</div>
+                      Generate & print
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+export default LessonGenerator;
