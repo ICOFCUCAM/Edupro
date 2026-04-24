@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { LANGUAGES } from '@/lib/constants';
-import { Globe, Menu, X, BookOpen, ChevronDown, User, LogOut, LayoutDashboard } from 'lucide-react';
+import { Globe, Menu, X, BookOpen, ChevronDown, User, LogOut, Download, Wifi, WifiOff, RefreshCw } from 'lucide-react';
+import { SyncStatus } from '../workers/offlineSyncWorker';
 
 interface NavbarProps {
   currentPage: string;
@@ -12,11 +13,20 @@ interface NavbarProps {
   setAuthMode: (mode: 'login' | 'signup') => void;
   onLogout: () => void;
   userName?: string;
+  // Offline mode
+  isOnline?: boolean;
+  syncStatus?: SyncStatus;
+  pendingCount?: number;
+  onSyncClick?: () => void;
+  showInstallButton?: boolean;
+  onInstallClick?: () => void;
 }
 
 const Navbar: React.FC<NavbarProps> = ({
   currentPage, setCurrentPage, language, setLanguage,
-  isLoggedIn, setShowAuth, setAuthMode, onLogout, userName
+  isLoggedIn, setShowAuth, setAuthMode, onLogout, userName,
+  isOnline = true, syncStatus = 'idle', pendingCount = 0,
+  onSyncClick, showInstallButton = false, onInstallClick,
 }) => {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [langOpen, setLangOpen] = useState(false);
@@ -70,6 +80,46 @@ const Navbar: React.FC<NavbarProps> = ({
 
           {/* Right side */}
           <div className="flex items-center gap-3">
+
+            {/* Connection status badge */}
+            <button
+              onClick={onSyncClick}
+              title={!isOnline ? 'Offline Mode Active' : syncStatus === 'syncing' ? 'Syncing...' : 'Online'}
+              className={`hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-full border text-xs font-medium transition-all ${
+                !isOnline
+                  ? 'bg-blue-50 border-blue-200 text-blue-700'
+                  : syncStatus === 'syncing' || syncStatus === 'error'
+                    ? 'bg-yellow-50 border-yellow-200 text-yellow-700'
+                    : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+              }`}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                !isOnline ? 'bg-blue-500 animate-pulse'
+                : syncStatus === 'syncing' ? 'bg-yellow-500 animate-pulse'
+                : 'bg-emerald-500'
+              }`} />
+              {!isOnline
+                ? <><WifiOff className="w-3 h-3" /> Offline</>
+                : syncStatus === 'syncing'
+                  ? <><RefreshCw className="w-3 h-3 animate-spin" /> Syncing</>
+                  : <><Wifi className="w-3 h-3" /> Online</>
+              }
+              {pendingCount > 0 && (
+                <span className="bg-orange-500 text-white rounded-full text-[10px] px-1 leading-4">{pendingCount}</span>
+              )}
+            </button>
+
+            {/* PWA Install button */}
+            {showInstallButton && (
+              <button
+                onClick={onInstallClick}
+                className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-blue-200 bg-blue-50 text-blue-700 text-xs font-medium hover:bg-blue-100 transition-all"
+                title="Install EduPro on your device"
+              >
+                <Download className="w-3.5 h-3.5" /> Install App
+              </button>
+            )}
+
             {/* Language Selector */}
             <div className="relative">
               <button
@@ -162,6 +212,20 @@ const Navbar: React.FC<NavbarProps> = ({
               {item.label}
             </button>
           ))}
+          {/* Mobile connection status + install */}
+          <div className="pt-2 border-t border-gray-100 flex items-center justify-between px-1">
+            <span className={`inline-flex items-center gap-1.5 text-xs font-medium ${!isOnline ? 'text-blue-600' : 'text-emerald-600'}`}>
+              <span className={`w-2 h-2 rounded-full ${!isOnline ? 'bg-blue-500 animate-pulse' : 'bg-emerald-500'}`} />
+              {!isOnline ? 'Offline Mode' : syncStatus === 'syncing' ? 'Syncing...' : 'Online'}
+              {pendingCount > 0 && <span className="bg-orange-500 text-white rounded-full text-[10px] px-1">{pendingCount}</span>}
+            </span>
+            {showInstallButton && (
+              <button onClick={() => { onInstallClick?.(); setMobileOpen(false); }}
+                className="flex items-center gap-1 text-xs text-blue-600 font-medium">
+                <Download className="w-3.5 h-3.5" /> Install App
+              </button>
+            )}
+          </div>
         </div>
       )}
 

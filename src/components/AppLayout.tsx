@@ -1,5 +1,6 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useAuth } from '@/hooks/useAuth';
+import { useOfflineMode } from '@/hooks/useOfflineMode';
 import Navbar from './Navbar';
 import HeroSection from './HeroSection';
 import FeaturesSection from './FeaturesSection';
@@ -37,6 +38,31 @@ const AppLayout: React.FC = () => {
   const [language, setLanguage] = useState('en');
   const [showAuth, setShowAuth] = useState(false);
   const [authMode, setAuthMode] = useState<'login' | 'signup' | 'reset'>('login');
+  const [showInstallButton, setShowInstallButton] = useState(false);
+  const installPromptRef = useRef<any>(null);
+
+  const { isOnline, syncStatus, pendingCount, lastSyncTime, triggerSync } = useOfflineMode({
+    country: profile?.country || 'Nigeria',
+    autoStart: isLoggedIn,
+  });
+
+  useEffect(() => {
+    const handler = (e: Event) => {
+      e.preventDefault();
+      installPromptRef.current = e;
+      setShowInstallButton(true);
+    };
+    window.addEventListener('beforeinstallprompt', handler as EventListener);
+    return () => window.removeEventListener('beforeinstallprompt', handler as EventListener);
+  }, []);
+
+  const handleInstallClick = async () => {
+    if (!installPromptRef.current) return;
+    installPromptRef.current.prompt();
+    const { outcome } = await installPromptRef.current.userChoice;
+    if (outcome === 'accepted') setShowInstallButton(false);
+    installPromptRef.current = null;
+  };
 
   // Close auth modal on successful login
   useEffect(() => {
@@ -141,6 +167,7 @@ const AppLayout: React.FC = () => {
           <LessonGenerator
             teacherId={profile?.id}
             onLessonSaved={handleLessonSaved}
+            isOnline={isOnline}
           />
         );
 
@@ -161,15 +188,18 @@ const AppLayout: React.FC = () => {
 
       case 'dashboard':
         return (
-          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="overview" />
+          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="overview"
+            isOnline={isOnline} syncStatus={syncStatus} pendingCount={pendingCount} lastSyncTime={lastSyncTime} onSyncClick={triggerSync} />
         );
       case 'my-lessons':
         return (
-          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="lessons" />
+          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="lessons"
+            isOnline={isOnline} syncStatus={syncStatus} pendingCount={pendingCount} lastSyncTime={lastSyncTime} onSyncClick={triggerSync} />
         );
       case 'settings':
         return (
-          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="settings" />
+          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="settings"
+            isOnline={isOnline} syncStatus={syncStatus} pendingCount={pendingCount} lastSyncTime={lastSyncTime} onSyncClick={triggerSync} />
         );
 
 
@@ -195,6 +225,12 @@ const AppLayout: React.FC = () => {
         setAuthMode={(mode: 'login' | 'signup') => { setAuthMode(mode); clearError(); }}
         onLogout={handleLogout}
         userName={profile?.full_name || user?.email?.split('@')[0] || ''}
+        isOnline={isOnline}
+        syncStatus={syncStatus}
+        pendingCount={pendingCount}
+        onSyncClick={triggerSync}
+        showInstallButton={showInstallButton}
+        onInstallClick={handleInstallClick}
       />
 
       <main>

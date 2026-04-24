@@ -1,14 +1,16 @@
 import React, { useState, useRef } from 'react';
 import { supabase } from '@/lib/supabase';
 import { REGIONS, COUNTRIES_WITH_LEVELS, SUBJECTS } from '@/lib/constants';
-import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2 } from 'lucide-react';
+import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2, WifiOff } from 'lucide-react';
+import { saveLessonOffline, enqueueUpload } from '@/lib/offlineDB';
 
 interface LessonGeneratorProps {
   teacherId?: string;
   onLessonSaved?: () => void;
+  isOnline?: boolean;
 }
 
-const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSaved }) => {
+const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSaved, isOnline = true }) => {
   const [formData, setFormData] = useState({
     country: 'Nigeria', subject: 'Mathematics', topic: '',
     level: 'Primary 3', week: '1', language: 'English', additionalNotes: ''
@@ -35,12 +37,38 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     });
   };
 
+  const buildOfflineLesson = () => {
+    const { subject, topic, level, country, language, week } = formData;
+    const countryData = COUNTRIES_WITH_LEVELS[country];
+    const curr = countryData?.curriculum || 'National Curriculum';
+    return {
+      title: `${subject} – ${topic}`,
+      columns: ['Step', 'Teacher Activity', 'Pupil Activity', 'Resources', 'Assessment'],
+      rows: [
+        { Step: 'Introduction (10 min)', 'Teacher Activity': `Introduce ${topic} with a relevant question or story.`, 'Pupil Activity': 'Listen and respond to questions.', Resources: 'Textbook, chalkboard', Assessment: 'Oral questioning' },
+        { Step: 'Development (20 min)', 'Teacher Activity': `Explain ${topic} using examples. Demonstrate on board.`, 'Pupil Activity': 'Take notes and solve guided examples.', Resources: 'Textbook, exercise books', Assessment: 'Class observation' },
+        { Step: 'Activity (15 min)', 'Teacher Activity': 'Circulate and support groups.', 'Pupil Activity': `Work in groups on ${topic} exercises.`, Resources: 'Worksheets', Assessment: 'Group work check' },
+        { Step: 'Conclusion (5 min)', 'Teacher Activity': 'Summarise key points. Set homework.', 'Pupil Activity': 'Answer summary questions.', Resources: 'Chalkboard', Assessment: 'Exit ticket' },
+      ],
+      metadata: { Subject: subject, Topic: topic, 'Class/Level': level, Week: `Week ${week}`, Curriculum: curr, Language: language, Country: country },
+      teacherNotes: `This is an offline template for "${topic}". Regenerate online for a fully AI-personalised lesson note.`,
+    };
+  };
+
   const generateLesson = async () => {
     if (!formData.topic.trim()) { setError('Please enter a topic'); return; }
     setError('');
     setLoading(true);
     setLessonNote(null);
     setSaved(false);
+
+    if (!isOnline) {
+      // Offline: use template fallback
+      await new Promise(r => setTimeout(r, 600));
+      setLessonNote(buildOfflineLesson());
+      setLoading(false);
+      return;
+    }
 
     try {
       const { data, error: fnError } = await supabase.functions.invoke('generate-lesson-note', {
@@ -64,10 +92,42 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     if (!lessonNote || !teacherId) return;
     setSaving(true);
     try {
+      const title = lessonNote.title || `${formData.subject} - ${formData.topic}`;
+      const contentStr = JSON.stringify(lessonNote);
+
+      if (!isOnline) {
+        // Save to IndexedDB; will sync when online
+        const offlineId = `offline_${Date.now()}`;
+        await saveLessonOffline({
+          id: offlineId,
+          country: formData.country,
+          subject: formData.subject,
+          class_level: formData.level,
+          title,
+          content: contentStr,
+          visibility: 'private',
+          created_at: new Date().toISOString(),
+          synced: false,
+        });
+        await enqueueUpload({
+          id: offlineId,
+          content: contentStr,
+          subject: formData.subject,
+          class_level: formData.level,
+          country: formData.country,
+          title,
+          status: 'pending',
+          created_at: new Date().toISOString(),
+        });
+        setSaved(true);
+        onLessonSaved?.();
+        return;
+      }
+
       const region = REGIONS.find(r => r.countries.includes(formData.country))?.name || 'West Africa';
       const { error: saveErr } = await supabase.from('lesson_notes').insert({
         teacher_id: teacherId,
-        title: lessonNote.title || `${formData.subject} - ${formData.topic}`,
+        title,
         subject: formData.subject,
         topic: formData.topic,
         country: formData.country,
@@ -80,11 +140,6 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       });
 
       if (saveErr) throw saveErr;
-
-      // Increment lesson count
-      await supabase.from('teachers').update({
-        lesson_count: supabase.rpc ? undefined : undefined, // handled by hook
-      }).eq('id', teacherId);
 
       setSaved(true);
       onLessonSaved?.();
@@ -207,6 +262,11 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
               <h1 className="text-3xl font-bold">AI Lesson Note Generator</h1>
               <p className="text-blue-200">Create curriculum-aligned lesson notes in seconds</p>
             </div>
+            {!isOnline && (
+              <span className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-blue-800/60 border border-blue-400/40 text-blue-100 text-xs font-medium">
+                <WifiOff className="w-3.5 h-3.5" /> Offline — Template Mode
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -317,13 +377,18 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                 {lessonNote && (
                   <div className="flex items-center gap-2">
                     {teacherId && (
-                      <button onClick={saveLesson} disabled={saving || saved}
-                        className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                          saved ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
-                        }`}>
-                        {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
-                        {saving ? 'Saving...' : saved ? 'Saved!' : 'Save'}
-                      </button>
+                      <div className="flex flex-col items-end gap-1">
+                        <button onClick={saveLesson} disabled={saving || saved}
+                          className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                            saved ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
+                          }`}>
+                          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : saved ? <CheckCircle2 className="w-4 h-4" /> : <Save className="w-4 h-4" />}
+                          {saving ? 'Saving...' : saved ? (!isOnline ? 'Saved Locally' : 'Saved!') : 'Save'}
+                        </button>
+                        {saved && !isOnline && (
+                          <span className="text-xs text-blue-500">Will sync when connected</span>
+                        )}
+                      </div>
                     )}
                     <button onClick={handlePrint} className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-all">
                       <Printer className="w-4 h-4" /> Print / PDF

@@ -6,12 +6,19 @@ import {
   Sparkles, Download, Printer, Trash2, Eye, ChevronRight, Award, BarChart3,
   Clock, Loader2, Save, CheckCircle2, AlertCircle, Edit3, Mail, Building, MapPin
 } from 'lucide-react';
+import ConnectionBadge from './ConnectionBadge';
+import type { SyncStatus } from '../workers/offlineSyncWorker';
 
 interface UserDashboardProps {
   profile: TeacherProfile | null;
   onNavigate: (page: string) => void;
   onUpdateProfile: (updates: Partial<TeacherProfile>) => Promise<{ success: boolean; error?: string }>;
   initialTab?: 'overview' | 'lessons' | 'saved' | 'settings';
+  isOnline?: boolean;
+  syncStatus?: SyncStatus;
+  pendingCount?: number;
+  lastSyncTime?: string | null;
+  onSyncClick?: () => void;
 }
 
 
@@ -35,7 +42,10 @@ interface SavedItem {
   created_at: string;
 }
 
-const UserDashboard: React.FC<UserDashboardProps> = ({ profile, onNavigate, onUpdateProfile, initialTab }) => {
+const UserDashboard: React.FC<UserDashboardProps> = ({
+  profile, onNavigate, onUpdateProfile, initialTab,
+  isOnline = true, syncStatus = 'idle', pendingCount = 0, lastSyncTime, onSyncClick,
+}) => {
   const [activeTab, setActiveTab] = useState<'overview' | 'lessons' | 'saved' | 'settings'>(initialTab || 'overview');
 
   const [lessons, setLessons] = useState<LessonRecord[]>([]);
@@ -156,6 +166,15 @@ const UserDashboard: React.FC<UserDashboardProps> = ({ profile, onNavigate, onUp
         {/* ==================== OVERVIEW ==================== */}
         {activeTab === 'overview' && (
           <div className="space-y-6 pb-12">
+            {/* Connection status */}
+            <ConnectionBadge
+              isOnline={isOnline}
+              syncStatus={syncStatus}
+              pendingCount={pendingCount}
+              lastSyncTime={lastSyncTime}
+              onSyncClick={onSyncClick}
+            />
+
             {/* Stats cards */}
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               {[
