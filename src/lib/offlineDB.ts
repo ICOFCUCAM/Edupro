@@ -1,6 +1,6 @@
 // IndexedDB wrapper for EduPro offline storage
 const DB_NAME = 'edupro_offline';
-const DB_VERSION = 1;
+const DB_VERSION = 2;
 
 export interface OfflineLessonNote {
   id: string;
@@ -63,6 +63,27 @@ export interface AssistantHistoryItem {
   session_id: string;
 }
 
+export interface OfflineStudentResult {
+  id: string;
+  student_id: string;
+  assessment_package_id: string;
+  organization_id?: string;
+  score: number;
+  max_score: number;
+  synced: boolean;
+  created_at: string;
+}
+
+export interface OfflineObjectiveMastery {
+  id: string;               // composite: `${student_id}_${objective_id}`
+  student_id: string;
+  objective_id: string;
+  mastery_level: string;
+  confidence_score: number;
+  last_updated: string;
+  synced: boolean;
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -94,6 +115,17 @@ function openDB(): Promise<IDBDatabase> {
       }
       if (!db.objectStoreNames.contains('meta')) {
         db.createObjectStore('meta', { keyPath: 'key' });
+      }
+      // v2 stores
+      if (!db.objectStoreNames.contains('student_results')) {
+        const store = db.createObjectStore('student_results', { keyPath: 'id' });
+        store.createIndex('synced', 'synced');
+        store.createIndex('organization_id', 'organization_id');
+      }
+      if (!db.objectStoreNames.contains('objective_mastery')) {
+        const store = db.createObjectStore('objective_mastery', { keyPath: 'id' });
+        store.createIndex('synced', 'synced');
+        store.createIndex('student_id', 'student_id');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -252,4 +284,38 @@ export async function getMeta(key: string): Promise<string | null> {
   const db = await openDB();
   const result = await txGet<{ key: string; value: string }>(db, 'meta', key);
   return result?.value ?? null;
+}
+
+// Student results (offline queue)
+export async function saveStudentResultOffline(item: OfflineStudentResult): Promise<void> {
+  const db = await openDB();
+  await txPut(db, 'student_results', item);
+}
+
+export async function getUnsyncedStudentResults(): Promise<OfflineStudentResult[]> {
+  const db = await openDB();
+  return txGetAll<OfflineStudentResult>(db, 'student_results', 'synced', IDBKeyRange.only(0));
+}
+
+export async function markStudentResultSynced(id: string): Promise<void> {
+  const db = await openDB();
+  const item = await txGet<OfflineStudentResult>(db, 'student_results', id);
+  if (item) await txPut(db, 'student_results', { ...item, synced: true });
+}
+
+// Objective mastery (offline cache)
+export async function saveObjectiveMasteryOffline(item: OfflineObjectiveMastery): Promise<void> {
+  const db = await openDB();
+  await txPut(db, 'objective_mastery', item);
+}
+
+export async function getUnsyncedObjectiveMastery(): Promise<OfflineObjectiveMastery[]> {
+  const db = await openDB();
+  return txGetAll<OfflineObjectiveMastery>(db, 'objective_mastery', 'synced', IDBKeyRange.only(0));
+}
+
+export async function markObjectiveMasterySynced(id: string): Promise<void> {
+  const db = await openDB();
+  const item = await txGet<OfflineObjectiveMastery>(db, 'objective_mastery', id);
+  if (item) await txPut(db, 'objective_mastery', { ...item, synced: true });
 }

@@ -14,6 +14,7 @@ import {
   getAlignmentScoresForLessons, alignLessonToCurriculum,
   saveAlignmentScore, extractTextFromLessonNote, StoredAlignmentScore,
 } from '@/services/alignmentService';
+import { getClassPerformanceSummary, type ClassPerformanceSummary } from '@/services/performanceService';
 import type { SyncStatus } from '../workers/offlineSyncWorker';
 
 interface UserDashboardProps {
@@ -64,6 +65,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
   const [checkingAlignment, setCheckingAlignment] = useState<Record<string, boolean>>({});
+  const [coachingData, setCoachingData] = useState<ClassPerformanceSummary[]>([]);
 
   useEffect(() => {
     if (profile) {
@@ -92,6 +94,13 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
 
       setLessons(lessonRows);
       setSavedItems(savedRes.data || []);
+
+      // Load coaching data (classes with intervention needed) silently
+      if (profile?.organization_id) {
+        getClassPerformanceSummary(profile.organization_id)
+          .then((summaries) => setCoachingData(summaries.filter((s) => s.intervention_needed || s.weak_objectives.length > 0)))
+          .catch(() => {});
+      }
     } catch (err) {
       console.error('Dashboard fetch error:', err);
     } finally {
@@ -274,6 +283,42 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Coaching insights */}
+            {coachingData.length > 0 && (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-purple-600" /> Coaching Insights
+                </h3>
+                <div className="space-y-3">
+                  {coachingData.slice(0, 4).map((c) => (
+                    <div key={c.id} className={`p-3 rounded-xl border ${c.intervention_needed ? 'border-red-200 bg-red-50' : 'border-amber-200 bg-amber-50'}`}>
+                      <div className="flex items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-900">{c.subject} · {c.class_level}</p>
+                          <p className="text-xs text-gray-500">{c.student_count} students · Avg: <strong className={c.average_score < 50 ? 'text-red-600' : 'text-amber-600'}>{c.average_score.toFixed(1)}%</strong></p>
+                        </div>
+                        {c.intervention_needed && (
+                          <span className="text-xs font-medium text-red-600 bg-red-100 px-2 py-0.5 rounded-full flex-shrink-0">Intervention</span>
+                        )}
+                      </div>
+                      {c.weak_objectives.length > 0 && (
+                        <div className="mt-2">
+                          <p className="text-xs font-medium text-gray-600">Students struggling with:</p>
+                          <ul className="mt-1 space-y-0.5">
+                            {c.weak_objectives.slice(0, 2).map((obj, i) => (
+                              <li key={i} className="text-xs text-gray-700 flex items-start gap-1">
+                                <span className="text-red-400 mt-0.5">·</span>{obj}
+                              </li>
+                            ))}
+                          </ul>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* Recent lessons */}
             <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">

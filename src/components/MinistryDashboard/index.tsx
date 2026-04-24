@@ -8,6 +8,7 @@ import {
 import { getChildOrganizations, getOrganizationStats, Organization } from '@/services/organizationService';
 import { getCountryAlignmentStats } from '@/services/alignmentService';
 import { getMinistryQuestionBank, type MinistryQuestionBankItem } from '@/services/assessmentService';
+import { getNationalPerformance } from '@/services/performanceService';
 import { SUBJECTS } from '@/lib/constants';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -29,7 +30,12 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     avg_score: number; total_lessons: number; full: number; partial: number; needs_improvement: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank' | 'national-mastery'>('overview');
+
+  // National mastery state
+  const [nationalPerf, setNationalPerf] = useState<{ subject: string; average_score: number; district_count: number; student_count: number }[]>([]);
+  const [nationalPerfLoaded, setNationalPerfLoaded] = useState(false);
+  const [nationalPerfLoading, setNationalPerfLoading] = useState(false);
 
   // Question bank state
   const [qbItems, setQbItems]               = useState<MinistryQuestionBankItem[]>([]);
@@ -144,11 +150,21 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     }
   };
 
+  const loadNationalPerformance = async () => {
+    if (nationalPerfLoaded) return;
+    setNationalPerfLoading(true);
+    const data = await getNationalPerformance(organization.country);
+    setNationalPerf(data);
+    setNationalPerfLoaded(true);
+    setNationalPerfLoading(false);
+  };
+
   const tabs = [
-    { id: 'overview'       as const, label: 'Overview',      icon: BarChart3 },
-    { id: 'districts'      as const, label: 'Districts',     icon: Building2 },
-    { id: 'question-bank'  as const, label: 'Question Bank', icon: ClipboardList },
-    { id: 'alerts'         as const, label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}`, icon: Bell },
+    { id: 'overview'         as const, label: 'Overview',         icon: BarChart3 },
+    { id: 'districts'        as const, label: 'Districts',        icon: Building2 },
+    { id: 'national-mastery' as const, label: 'National Mastery', icon: Target },
+    { id: 'question-bank'    as const, label: 'Question Bank',    icon: ClipboardList },
+    { id: 'alerts'           as const, label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}`, icon: Bell },
   ];
 
   if (loading) {
@@ -194,6 +210,7 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
           <button key={tab.id} onClick={() => {
             setActiveTab(tab.id);
             if (tab.id === 'question-bank' && qbItems.length === 0) loadQuestionBank();
+            if (tab.id === 'national-mastery') loadNationalPerformance();
           }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'
@@ -312,6 +329,86 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
                 </button>
               ))}
             </div>
+          )}
+        </div>
+      )}
+
+      {/* National Mastery */}
+      {activeTab === 'national-mastery' && (
+        <div className="space-y-5">
+          <p className="text-sm text-gray-500">
+            Nationwide subject performance aggregated across all districts and schools.
+          </p>
+
+          {nationalPerfLoading && (
+            <div className="flex items-center justify-center py-16">
+              <Loader2 className="w-7 h-7 animate-spin text-blue-500" />
+            </div>
+          )}
+
+          {!nationalPerfLoading && nationalPerf.length === 0 && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-12 text-center text-gray-400">
+              <Target className="w-12 h-12 mx-auto mb-3 opacity-30" />
+              <p className="font-medium text-gray-600 mb-1">No national performance data yet</p>
+              <p className="text-sm">Data appears here once district performance summaries are populated from school assessment results.</p>
+            </div>
+          )}
+
+          {!nationalPerfLoading && nationalPerf.length > 0 && (
+            <>
+              {/* National average chart */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-blue-600" /> National Subject Performance
+                </h3>
+                <ResponsiveContainer width="100%" height={240}>
+                  <BarChart data={nationalPerf} layout="vertical">
+                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
+                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
+                    <YAxis dataKey="subject" type="category" tick={{ fontSize: 10 }} width={120} />
+                    <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
+                    <Bar dataKey="average_score" fill="#3b82f6" radius={[0, 4, 4, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+
+              {/* Effectiveness signals */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5 text-amber-500" /> Curriculum Effectiveness Signals
+                </h3>
+                <div className="space-y-3">
+                  {nationalPerf.map((p) => {
+                    const belowBenchmark = p.average_score < 65;
+                    const critical = p.average_score < 50;
+                    return (
+                      <div key={p.subject} className={`flex items-center justify-between p-3 rounded-xl ${
+                        critical ? 'bg-red-50' : belowBenchmark ? 'bg-amber-50' : 'bg-emerald-50'
+                      }`}>
+                        <div>
+                          <p className="text-sm font-medium text-gray-900">{p.subject}</p>
+                          <p className="text-xs text-gray-500">{p.district_count} districts · {p.student_count} students</p>
+                        </div>
+                        <div className="text-right flex items-center gap-2">
+                          <span className={`text-base font-bold ${
+                            critical ? 'text-red-600' : belowBenchmark ? 'text-amber-600' : 'text-emerald-600'
+                          }`}>{p.average_score.toFixed(1)}%</span>
+                          {critical && <AlertTriangle className="w-4 h-4 text-red-500" />}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {nationalPerf.filter(p => p.average_score < 50).length > 0 && (
+                  <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+                    <p className="text-sm font-semibold text-red-800">Policy Action Required</p>
+                    <p className="text-xs text-red-700 mt-1">
+                      {nationalPerf.filter(p => p.average_score < 50).map(p => p.subject).join(', ')} {nationalPerf.filter(p => p.average_score < 50).length === 1 ? 'is' : 'are'} below 50% nationally. Consider curriculum review, teacher training programs, or targeted interventions.
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
           )}
         </div>
       )}
