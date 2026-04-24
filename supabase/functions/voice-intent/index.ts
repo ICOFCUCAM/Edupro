@@ -80,7 +80,7 @@ IMPORTANT — respond ONLY with a single valid JSON object. No markdown, no expl
 
 JSON format:
 {
-  "intent": "<one of: generate_lesson | generate_assessment | check_mastery | ask_country_agent | check_alignment | translate_content | dictate_lesson | ask_textbook | localize_lesson | compare_curriculum | general_question>",
+  "intent": "<one of: generate_lesson | generate_assessment | check_mastery | ask_country_agent | check_alignment | translate_content | dictate_lesson | ask_textbook | localize_lesson | compare_curriculum | check_curriculum_alerts | general_question>",
   "entities": {
     "country": "<extracted or teacher default>",
     "subject": "<extracted or teacher default>",
@@ -107,8 +107,9 @@ Intent rules:
 - dictate_lesson       : teacher is dictating lesson content aloud ("lesson title:", "objectives:", "today we will learn…")
 - ask_textbook         : teacher asks which chapter in the textbook covers a topic ("which chapter covers fractions?", "where is photosynthesis in the textbook?", "find me the chapter on algebra")
 - localize_lesson      : teacher wants to adapt/convert/localize their lesson for another country's curriculum ("convert my lesson to Ghana curriculum", "localize this for Kenya", "adapt my fractions lesson for Cameroon")
-- compare_curriculum   : teacher or admin asks how similar two countries' curricula are ("how similar is Nigeria and Ghana math?", "compare Cameroon and Nigeria curriculum", "what's the overlap between Kenya and Uganda science?")
-- general_question     : questions about pedagogy, methodology, definitions, explanations
+- compare_curriculum        : teacher or admin asks how similar two countries' curricula are ("how similar is Nigeria and Ghana math?", "compare Cameroon and Nigeria curriculum", "what's the overlap between Kenya and Uganda science?")
+- check_curriculum_alerts   : teacher asks about curriculum update alerts or changes from other countries ("any curriculum alerts?", "any updates from Ghana?", "did any country change their curriculum?", "check for new curriculum alerts")
+- general_question          : questions about pedagogy, methodology, definitions, explanations
 
 Spoken response rules:
 • For check_mastery: use the performance data. If no data, say how to get started.
@@ -116,6 +117,7 @@ Spoken response rules:
 • For ask_textbook: return EMPTY STRING — the client handles the search and speaks the result.
 • For localize_lesson: return EMPTY STRING — the client fetches the lesson and calls the localization engine.
 • For compare_curriculum: give a concise 1–2 sentence answer describing curriculum overlap if you know it; otherwise say you will look it up. Extract target_country from the transcript.
+• For check_curriculum_alerts: return EMPTY STRING — the client fetches and speaks the alert count.
 • For general_question: give a helpful 1–3 sentence pedagogical answer.
 • Language of spoken_response: match the teacher's language (${language}).
 • Pidgin (pcm): write the response in Nigerian/Cameroonian Pidgin English if language is 'pcm'.`;

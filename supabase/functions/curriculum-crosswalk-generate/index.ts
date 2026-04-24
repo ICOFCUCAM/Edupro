@@ -216,6 +216,17 @@ serve(async (req) => {
       );
     }
 
+    // ── Step 6: Broadcast alerts for recent curriculum changes ────────────
+    // Fire-and-forget — non-fatal; alerts are a best-effort notification
+    supabase.functions.invoke('curriculum-alert-broadcast', {
+      body: {
+        sourceCountry,
+        changeType:  'updated',
+        subject:     subject ?? null,
+        description: `Crosswalk regenerated: ${sourceCountry} ↔ ${targetCountry} (${similarityScore}% similarity, ${matches?.length ?? 0} matched pairs)`,
+      },
+    }).catch(() => {});
+
     return new Response(
       JSON.stringify({
         success:              true,

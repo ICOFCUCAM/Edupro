@@ -471,6 +471,43 @@ export function useVoice(options: UseVoiceOptions) {
           break;
         }
 
+        // ── Curriculum update alerts ──────────────────────────────────────
+        case 'check_curriculum_alerts': {
+          const { data: alertRows } = await supabase
+            .from('curriculum_update_alerts')
+            .select('id, source_country, change_type, subject, description, read_by, created_at')
+            .eq('target_country', teacherCountry)
+            .order('created_at', { ascending: false })
+            .limit(20);
+
+          const rows = alertRows ?? [];
+          const unread = rows.filter((a: any) => !((a.read_by ?? {})[teacherId ?? '']));
+
+          if (!rows.length) {
+            finalResponse = `No curriculum update alerts for ${teacherCountry} yet. Alerts will appear here when countries with similar curricula update their objectives.`;
+          } else if (!unread.length) {
+            finalResponse = `You're all caught up — ${rows.length} curriculum alert${rows.length !== 1 ? 's' : ''} for ${teacherCountry}, all read. Open the Curriculum Crosswalk to review them.`;
+          } else {
+            const sources = [...new Set(unread.map((a: any) => a.source_country as string))];
+            finalResponse = `You have ${unread.length} unread curriculum alert${unread.length !== 1 ? 's' : ''} affecting ${teacherCountry}. ` +
+              `Updates from: ${sources.slice(0, 3).join(', ')}${sources.length > 3 ? ` and ${sources.length - 3} more` : ''}. ` +
+              `Open the Curriculum Crosswalk Alerts tab to review.`;
+            // Mark as read for this teacher
+            if (teacherId) {
+              const unreadIds = unread.map((a: any) => a.id as string);
+              const now = new Date().toISOString();
+              Promise.all(unreadIds.slice(0, 10).map((id: string) =>
+                supabase
+                  .from('curriculum_update_alerts')
+                  .update({ read_by: { [teacherId]: now } })
+                  .eq('id', id),
+              )).catch(() => {});
+            }
+          }
+          actionTaken = 'alerts_checked';
+          break;
+        }
+
         // ── General question / ask_agent fallback ────────────────────────
         case 'ask_agent':
         case 'general_question':

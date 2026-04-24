@@ -416,6 +416,53 @@ export async function searchChaptersByQuery(
   return (data.chapters ?? []) as ChapterSearchResult[];
 }
 
+// ── Cross-country textbook comparison ────────────────────────────────────────
+
+export interface CrossCountryTextbookComparison {
+  id?:                    string;
+  country_a:              string;
+  country_b:              string;
+  subject:                string;
+  textbook_count_a:       number;
+  textbook_count_b:       number;
+  shared_crosswalk_pairs: number;
+  country_a_coverage:     number;
+  country_b_coverage:     number;
+  gap_count_a:            number;
+  gap_count_b:            number;
+  top_shared_topics:      string[];
+  gap_topics_a:           string[];
+  gap_topics_b:           string[];
+  computed_at:            string;
+}
+
+export async function compareTextbooksAcrossCountries(
+  countryA: string,
+  countryB: string,
+  subject?: string,
+): Promise<CrossCountryTextbookComparison> {
+  const { data, error } = await supabase.functions.invoke('textbook-compare-countries', {
+    body: { countryA, countryB, subject: subject ?? null },
+  });
+  if (error || !data?.success) throw new Error(error?.message ?? 'Comparison failed');
+  return data.comparison as CrossCountryTextbookComparison;
+}
+
+export async function getCrossCountryComparison(
+  countryA: string,
+  countryB: string,
+  subject?: string,
+): Promise<CrossCountryTextbookComparison | null> {
+  const { data } = await supabase
+    .from('textbook_cross_country_comparison')
+    .select('*')
+    .eq('country_a', countryA)
+    .eq('country_b', countryB)
+    .eq('subject', subject ?? '')
+    .single();
+  return data as CrossCountryTextbookComparison | null;
+}
+
 // ── Supplementary lessons for missing objectives ──────────────────────────────
 
 export async function getSupplementaryLessons(
