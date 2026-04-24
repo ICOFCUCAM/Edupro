@@ -4,9 +4,14 @@ import type { TeacherProfile } from '@/hooks/useAuth';
 import {
   User, BookOpen, FileText, Star, CreditCard, Settings, Globe2, Calendar,
   Sparkles, Download, Printer, Trash2, Eye, ChevronRight, Award, BarChart3,
-  Clock, Loader2, Save, CheckCircle2, AlertCircle, Edit3, Mail, Building, MapPin
+  Clock, Loader2, Save, CheckCircle2, AlertCircle, Edit3, Mail, Building, MapPin, Target
 } from 'lucide-react';
 import ConnectionBadge from './ConnectionBadge';
+import AlignmentBadge from './AlignmentBadge';
+import {
+  getAlignmentScoresForLessons, alignLessonToCurriculum,
+  saveAlignmentScore, extractTextFromLessonNote, StoredAlignmentScore,
+} from '@/services/alignmentService';
 import type { SyncStatus } from '../workers/offlineSyncWorker';
 
 interface UserDashboardProps {
@@ -32,6 +37,7 @@ interface LessonRecord {
   status: string;
   created_at: string;
   content: any;
+  alignmentScore?: StoredAlignmentScore;
 }
 
 interface SavedItem {
@@ -55,6 +61,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   const [editData, setEditData] = useState({ full_name: '', school_name: '', country: '' });
   const [saving, setSaving] = useState(false);
   const [saveMsg, setSaveMsg] = useState('');
+  const [checkingAlignment, setCheckingAlignment] = useState<Record<string, boolean>>({});
 
   useEffect(() => {
     if (profile) {
@@ -71,7 +78,17 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
         supabase.from('lesson_notes').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }).limit(20),
         supabase.from('saved_content').select('*').eq('teacher_id', profile.id).order('created_at', { ascending: false }).limit(20),
       ]);
-      setLessons(lessonsRes.data || []);
+      const lessonRows: LessonRecord[] = lessonsRes.data || [];
+
+      // Load alignment scores and merge into lesson records
+      if (lessonRows.length) {
+        const scoreMap = await getAlignmentScoresForLessons(lessonRows.map(l => l.id));
+        for (const lesson of lessonRows) {
+          if (scoreMap[lesson.id]) lesson.alignmentScore = scoreMap[lesson.id];
+        }
+      }
+
+      setLessons(lessonRows);
       setSavedItems(savedRes.data || []);
     } catch (err) {
       console.error('Dashboard fetch error:', err);
@@ -84,6 +101,25 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
     if (!confirm('Are you sure you want to delete this lesson note?')) return;
     await supabase.from('lesson_notes').delete().eq('id', id);
     setLessons(prev => prev.filter(l => l.id !== id));
+  };
+
+  const checkAlignment = async (lesson: LessonRecord) => {
+    setCheckingAlignment(prev => ({ ...prev, [lesson.id]: true }));
+    try {
+      const text = extractTextFromLessonNote(lesson.content);
+      if (!text.trim()) return;
+      const result = await alignLessonToCurriculum(text, lesson.country, lesson.subject, lesson.level);
+      if (result) {
+        await saveAlignmentScore(lesson.id, lesson.country, lesson.subject, lesson.level, result);
+        setLessons(prev => prev.map(l =>
+          l.id === lesson.id
+            ? { ...l, alignmentScore: { ...result, id: '', lesson_id: l.id, country: l.country, subject: l.subject, class_level: l.level, school_alignment_score: null, school_matched_objectives: null, school_missing_objectives: null, checked_at: new Date().toISOString() } }
+            : l
+        ));
+      }
+    } finally {
+      setCheckingAlignment(prev => ({ ...prev, [lesson.id]: false }));
+    }
   };
 
   const deleteSavedItem = async (id: string) => {
@@ -301,32 +337,54 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                 </button>
               </div>
             ) : (
-              lessons.map(lesson => (
-                <div key={lesson.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-all">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0">
-                      <FileText className="w-6 h-6 text-blue-600" />
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <h4 className="font-semibold text-gray-900 text-sm truncate">{lesson.title || `${lesson.subject} - ${lesson.topic}`}</h4>
-                      <div className="flex flex-wrap items-center gap-2 mt-1">
-                        <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{lesson.country}</span>
-                        <span className="text-xs bg-gray-50 text-gray-600 px-2 py-0.5 rounded-full">{lesson.subject}</span>
-                        <span className="text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">{lesson.level}</span>
-                        <span className="text-xs text-gray-400 flex items-center gap-1"><Clock className="w-3 h-3" />{formatDate(lesson.created_at)}</span>
+              lessons.map(lesson => {
+                const aScore = lesson.alignmentScore;
+                const isChecking = checkingAlignment[lesson.id];
+                return (
+                  <div key={lesson.id} className="bg-white rounded-xl border border-gray-100 p-4 hover:shadow-md transition-all">
+                    <div className="flex items-start gap-4">
+                      <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5">
+                        <FileText className="w-6 h-6 text-blue-600" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <h4 className="font-semibold text-gray-900 text-sm truncate">{lesson.title || `${lesson.subject} - ${lesson.topic}`}</h4>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <span className="text-xs bg-blue-50 text-blue-600 px-2 py-0.5 rounded-full">{lesson.country}</span>
+                          <span className="text-xs bg-gray-50 text-gray-600 px-2 py-0.5 rounded-full">{lesson.subject}</span>
+                          <span className="text-xs bg-emerald-50 text-emerald-600 px-2 py-0.5 rounded-full">{lesson.level}</span>
+                          <span className="text-xs text-gray-400 flex items-center gap-1"><Clock className="w-3 h-3" />{formatDate(lesson.created_at)}</span>
+                        </div>
+
+                        {/* Alignment score row */}
+                        <div className="mt-2">
+                          {isChecking ? (
+                            <div className="flex items-center gap-1.5 text-xs text-gray-500">
+                              <Loader2 className="w-3.5 h-3.5 animate-spin" /> Checking alignment…
+                            </div>
+                          ) : aScore ? (
+                            <AlignmentBadge result={aScore} compact />
+                          ) : (
+                            <button
+                              onClick={() => checkAlignment(lesson)}
+                              className="flex items-center gap-1 text-xs text-indigo-600 hover:text-indigo-800 font-medium transition-colors"
+                            >
+                              <Target className="w-3.5 h-3.5" /> Check curriculum alignment
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button className="p-2 hover:bg-blue-50 rounded-lg transition-all" title="Print">
+                          <Printer className="w-4 h-4 text-gray-400 hover:text-blue-600" />
+                        </button>
+                        <button onClick={() => deleteLesson(lesson.id)} className="p-2 hover:bg-red-50 rounded-lg transition-all" title="Delete">
+                          <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
+                        </button>
                       </div>
                     </div>
-                    <div className="flex items-center gap-2">
-                      <button className="p-2 hover:bg-blue-50 rounded-lg transition-all" title="Print">
-                        <Printer className="w-4 h-4 text-gray-400 hover:text-blue-600" />
-                      </button>
-                      <button onClick={() => deleteLesson(lesson.id)} className="p-2 hover:bg-red-50 rounded-lg transition-all" title="Delete">
-                        <Trash2 className="w-4 h-4 text-gray-400 hover:text-red-600" />
-                      </button>
-                    </div>
                   </div>
-                </div>
-              ))
+                );
+              })
             )}
           </div>
         )}

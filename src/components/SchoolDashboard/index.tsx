@@ -8,7 +8,10 @@ import {
   getSchoolLessons, getTeacherLessonStats, addSchoolKnowledgeItem,
   uploadSchemeOfWork, Organization, LessonVisibility
 } from '@/services/organizationService';
-import { getCountryAlignmentStats } from '@/services/alignmentService';
+import {
+  getCountryAlignmentStats, alignLessonDual, extractTextFromFile,
+  DualAlignmentResult,
+} from '@/services/alignmentService';
 import AlignmentBadge from '@/components/AlignmentBadge';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -47,6 +50,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
   // File upload state
   const [uploading, setUploading] = useState(false);
   const [uploadMsg, setUploadMsg] = useState('');
+  const [uploadAlignment, setUploadAlignment] = useState<DualAlignmentResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
   // Lesson filter
@@ -114,15 +118,35 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
   const handleFileUpload = async (file: File) => {
     setUploading(true);
     setUploadMsg('');
+    setUploadAlignment(null);
+
     const result = await uploadSchemeOfWork(organization.id, file, userId);
-    setUploading(false);
     if (result) {
       setUploadMsg(`"${file.name}" uploaded successfully.`);
       loadData();
-      setTimeout(() => setUploadMsg(''), 4000);
+      setTimeout(() => setUploadMsg(''), 6000);
+
+      // Try to extract text and run alignment check
+      const ext = file.name.split('.').pop()?.toLowerCase();
+      if (ext === 'txt' || ext === 'docx') {
+        try {
+          const text = await extractTextFromFile(file);
+          if (text.trim().length > 80) {
+            // Use school knowledge items as scheme context
+            const knowledgeItems = await getSchoolKnowledgeItems(organization.id);
+            const dual = await alignLessonDual(
+              text, organization.country, '', '', knowledgeItems
+            );
+            setUploadAlignment(dual);
+          }
+        } catch {
+          // Alignment on upload is best-effort; silently ignore
+        }
+      }
     } else {
       setUploadMsg('Upload failed. Check storage bucket permissions.');
     }
+    setUploading(false);
   };
 
   const filteredLessons = lessonFilter === 'all'
@@ -430,12 +454,24 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
 
           {/* Status messages */}
           {uploadMsg && (
-            <div className={`flex items-center gap-2 mb-4 px-3 py-2 rounded-lg text-sm ${
+            <div className={`flex items-center gap-2 mb-3 px-3 py-2 rounded-lg text-sm ${
               uploadMsg.includes('failed') ? 'bg-red-50 text-red-600' : 'bg-emerald-50 text-emerald-600'
             }`}>
               <CheckCircle2 className="w-4 h-4 flex-shrink-0" /> {uploadMsg}
             </div>
           )}
+
+          {/* Alignment result for uploaded file */}
+          {uploadAlignment && (
+            <div className="mb-4">
+              <p className="text-xs font-semibold text-gray-600 mb-1.5">Document alignment preview:</p>
+              <AlignmentBadge
+                result={uploadAlignment.national}
+                schoolResult={uploadAlignment.school}
+              />
+            </div>
+          )}
+
           {kMsg && (
             <div className="flex items-center gap-2 mb-4 bg-emerald-50 text-emerald-600 px-3 py-2 rounded-lg text-sm">
               <CheckCircle2 className="w-4 h-4" /> {kMsg}

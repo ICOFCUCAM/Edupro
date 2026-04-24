@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { REGIONS } from '@/lib/constants';
-import { Brain, Search, Plus, ChevronRight, Globe2, BookOpen, Zap, AlertCircle, CheckCircle2, Clock, RefreshCw, Bot } from 'lucide-react';
+import { Brain, Search, Plus, ChevronRight, Globe2, BookOpen, Zap, AlertCircle, CheckCircle2, Clock, RefreshCw, Bot, Target } from 'lucide-react';
+import { rescoreLessonsForCountry } from '@/services/alignmentService';
 
 const KB_ENTRIES = [
   { id: 1, country: 'Nigeria', category: 'Curriculum Update', title: 'NERDC 2025 Revised Primary Curriculum', content: 'The Nigerian Educational Research and Development Council has updated the primary school curriculum to include digital literacy as a core subject from Primary 3. All lesson notes should now incorporate ICT integration objectives.', date: '2025-12-15', status: 'active', impact: 'high' },
@@ -15,13 +16,19 @@ const KB_ENTRIES = [
   { id: 10, country: 'Senegal', category: 'Pedagogy', title: 'Approche Par Compétences (APC) Update', content: 'Updated competency-based approach guidelines for primary education. Lesson plans must clearly define competencies, learning situations, and integration activities.', date: '2025-03-08', status: 'active', impact: 'medium' },
 ];
 
-const KnowledgeBase: React.FC = () => {
+interface KnowledgeBaseProps {
+  teacherCountry?: string;
+}
+
+const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry }) => {
   const [searchQuery, setSearchQuery] = useState('');
-  const [countryFilter, setCountryFilter] = useState('all');
+  const [countryFilter, setCountryFilter] = useState(teacherCountry && teacherCountry !== 'all' ? teacherCountry : 'all');
   const [categoryFilter, setCategoryFilter] = useState('all');
   const [selectedEntry, setSelectedEntry] = useState<typeof KB_ENTRIES[0] | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [syncing, setSyncing] = useState<string | null>(null);
+  const [rescoring, setRescoring] = useState<string | null>(null);
+  const [rescoreMsg, setRescoreMsg] = useState<string | null>(null);
 
   const allCountries = [...new Set(KB_ENTRIES.map(e => e.country))];
   const allCategories = [...new Set(KB_ENTRIES.map(e => e.category))];
@@ -35,8 +42,29 @@ const KnowledgeBase: React.FC = () => {
 
   const handleSync = async (country: string) => {
     setSyncing(country);
-    await new Promise(r => setTimeout(r, 2000));
+    await new Promise(r => setTimeout(r, 1500));
     setSyncing(null);
+  };
+
+  const handleRescore = async (entry: typeof KB_ENTRIES[0]) => {
+    const key = `${entry.id}`;
+    setRescoring(key);
+    setRescoreMsg(null);
+    try {
+      const { rescored, errors } = await rescoreLessonsForCountry(entry.country);
+      setRescoreMsg(
+        rescored > 0
+          ? `Rescored ${rescored} lesson${rescored !== 1 ? 's' : ''} for ${entry.country}.`
+          : errors > 0
+          ? `Rescore encountered errors for some lessons.`
+          : `No lessons found to rescore for ${entry.country}.`
+      );
+    } catch {
+      setRescoreMsg('Rescore failed. Please try again.');
+    } finally {
+      setRescoring(null);
+      setTimeout(() => setRescoreMsg(null), 5000);
+    }
   };
 
   const impactColor = (impact: string) => {
@@ -172,12 +200,29 @@ const KnowledgeBase: React.FC = () => {
                 {selectedEntry?.id === entry.id && (
                   <div className="mt-4 pt-4 border-t border-gray-100">
                     <p className="text-sm text-gray-600 leading-relaxed mb-4">{entry.content}</p>
-                    <div className="flex items-center gap-2">
-                      <button className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-100 transition-all">
-                        <RefreshCw className="w-3 h-3" /> Apply to Lessons
+
+                    {rescoreMsg && selectedEntry?.id === entry.id && (
+                      <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-indigo-50 text-indigo-700 rounded-lg text-xs">
+                        <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> {rescoreMsg}
+                      </div>
+                    )}
+
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <button
+                        onClick={() => handleRescore(entry)}
+                        disabled={rescoring === String(entry.id)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-100 transition-all disabled:opacity-50"
+                      >
+                        {rescoring === String(entry.id)
+                          ? <><RefreshCw className="w-3 h-3 animate-spin" /> Rescoring…</>
+                          : <><Target className="w-3 h-3" /> Rescore {entry.country} Lessons</>
+                        }
                       </button>
-                      <button className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition-all">
-                        <AlertCircle className="w-3 h-3" /> View Affected Notes
+                      <button
+                        onClick={() => setCountryFilter(entry.country)}
+                        className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition-all"
+                      >
+                        <AlertCircle className="w-3 h-3" /> Filter to {entry.country}
                       </button>
                     </div>
                   </div>

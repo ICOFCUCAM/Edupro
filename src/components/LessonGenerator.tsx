@@ -5,7 +5,8 @@ import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckC
 import { saveLessonOffline, enqueueUpload } from '@/lib/offlineDB';
 import { getUserOrganizations, Organization } from '@/services/organizationService';
 import { buildSchoolContextPrompt } from '@/services/schoolContextService';
-import { alignLessonToCurriculum, saveAlignmentScore, extractTextFromLessonNote, AlignmentResult } from '@/services/alignmentService';
+import { alignLessonDual, saveAlignmentScore, extractTextFromLessonNote, AlignmentResult, DualAlignmentResult } from '@/services/alignmentService';
+import { getSchoolKnowledgeItems } from '@/services/organizationService';
 import AlignmentBadge from '@/components/AlignmentBadge';
 
 interface LessonGeneratorProps {
@@ -35,7 +36,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
   const [error, setError] = useState('');
   const [schoolOrg, setSchoolOrg] = useState<Organization | null>(null);
   const [schoolContextLabel, setSchoolContextLabel] = useState('');
-  const [alignmentResult, setAlignmentResult] = useState<AlignmentResult | null>(null);
+  const [dualAlignment, setDualAlignment] = useState<DualAlignmentResult | null>(null);
   const [alignmentLoading, setAlignmentLoading] = useState(false);
   const [savedLessonId, setSavedLessonId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
@@ -89,7 +90,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     setLoading(true);
     setLessonNote(null);
     setSaved(false);
-    setAlignmentResult(null);
+    setDualAlignment(null);
     setSavedLessonId(null);
 
     if (!isOnline) {
@@ -127,8 +128,12 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     setAlignmentLoading(true);
     try {
       const text = extractTextFromLessonNote(note);
-      const result = await alignLessonToCurriculum(text, formData.country, formData.subject, formData.level);
-      setAlignmentResult(result);
+      let schoolItems: any[] | undefined;
+      if (schoolOrg) {
+        schoolItems = await getSchoolKnowledgeItems(schoolOrg.id);
+      }
+      const dual = await alignLessonDual(text, formData.country, formData.subject, formData.level, schoolItems);
+      setDualAlignment(dual);
     } finally {
       setAlignmentLoading(false);
     }
@@ -195,8 +200,11 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       const lessonId = insertedLesson?.id;
       if (lessonId) {
         setSavedLessonId(lessonId);
-        if (alignmentResult) {
-          saveAlignmentScore(lessonId, formData.country, formData.subject, formData.level, alignmentResult);
+        if (dualAlignment?.national) {
+          saveAlignmentScore(
+            lessonId, formData.country, formData.subject, formData.level,
+            dualAlignment.national, dualAlignment.school
+          );
         }
       }
 
@@ -514,7 +522,11 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                 </div>
               ) : lessonNote ? (
                 <div className="space-y-4">
-                  <AlignmentBadge result={alignmentResult} loading={alignmentLoading} />
+                  <AlignmentBadge
+                    result={dualAlignment?.national ?? null}
+                    schoolResult={dualAlignment?.school}
+                    loading={alignmentLoading}
+                  />
                   <div className="overflow-x-auto">
                     {renderLessonTable()}
                   </div>

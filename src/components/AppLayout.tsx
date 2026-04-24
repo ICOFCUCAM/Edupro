@@ -180,7 +180,7 @@ const AppLayout: React.FC = () => {
         return <ExamBank />;
 
       case 'knowledge-base':
-        return <KnowledgeBase />;
+        return <KnowledgeBase teacherCountry={profile?.country} />;
 
       case 'website-builder':
         return <WebsiteBuilder />;
