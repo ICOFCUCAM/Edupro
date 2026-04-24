@@ -51,7 +51,7 @@ select
   ap.created_at,
   t.school_name,
   o.name  as organization_name,
-  o.org_type
+  o.type  as org_type
 from public.assessment_packages ap
 left join public.teachers      t on t.id = ap.teacher_id
 left join public.organizations o on o.id = ap.organization_id;
