@@ -1,6 +1,6 @@
 // IndexedDB wrapper for EduPro offline storage
 const DB_NAME = 'edupro_offline';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 export interface OfflineLessonNote {
   id: string;
@@ -84,6 +84,14 @@ export interface OfflineObjectiveMastery {
   synced: boolean;
 }
 
+export interface OfflineVoiceDraft {
+  id: string;
+  teacher_id: string;
+  transcript: string;
+  created_at: string;
+  synced: boolean;
+}
+
 function openDB(): Promise<IDBDatabase> {
   return new Promise((resolve, reject) => {
     const req = indexedDB.open(DB_NAME, DB_VERSION);
@@ -126,6 +134,12 @@ function openDB(): Promise<IDBDatabase> {
         const store = db.createObjectStore('objective_mastery', { keyPath: 'id' });
         store.createIndex('synced', 'synced');
         store.createIndex('student_id', 'student_id');
+      }
+      // v3 stores
+      if (!db.objectStoreNames.contains('voice_drafts')) {
+        const store = db.createObjectStore('voice_drafts', { keyPath: 'id' });
+        store.createIndex('synced', 'synced');
+        store.createIndex('teacher_id', 'teacher_id');
       }
     };
     req.onsuccess = () => resolve(req.result);
@@ -318,4 +332,22 @@ export async function markObjectiveMasterySynced(id: string): Promise<void> {
   const db = await openDB();
   const item = await txGet<OfflineObjectiveMastery>(db, 'objective_mastery', id);
   if (item) await txPut(db, 'objective_mastery', { ...item, synced: true });
+}
+
+
+// Voice drafts (offline dictation queue)
+export async function saveVoiceDraftOffline(item: OfflineVoiceDraft): Promise<void> {
+  const db = await openDB();
+  await txPut(db, 'voice_drafts', item);
+}
+
+export async function getUnsyncedVoiceDrafts(): Promise<OfflineVoiceDraft[]> {
+  const db = await openDB();
+  return txGetAll<OfflineVoiceDraft>(db, 'voice_drafts', 'synced', IDBKeyRange.only(0));
+}
+
+export async function markVoiceDraftSynced(id: string): Promise<void> {
+  const db = await openDB();
+  const item = await txGet<OfflineVoiceDraft>(db, 'voice_drafts', id);
+  if (item) await txPut(db, 'voice_drafts', { ...item, synced: true });
 }

@@ -16,6 +16,7 @@ import ProtectedRoute from './ProtectedRoute';
 import UserDashboard from './UserDashboard';
 import OrganizationHub from './OrganizationHub';
 import AssessmentGenerator from './AssessmentGenerator';
+import VoiceAssistant from './VoiceAssistant';
 
 // Pages that require authentication
 const PROTECTED_PAGES: Record<string, string> = {
@@ -273,6 +274,20 @@ const AppLayout: React.FC = () => {
       </main>
 
       <Footer onNavigate={handleNavigate} />
+
+      {/* Voice Assistant — always mounted when logged in */}
+      {isLoggedIn && (
+        <VoiceAssistant
+          teacherId={profile?.id}
+          teacherCountry={profile?.country}
+          teacherName={profile?.full_name}
+          teacherSubject={undefined}
+          teacherClassLevel={undefined}
+          preferredLanguage={profile?.preferred_language || 'en'}
+          isOnline={isOnline}
+          onNavigate={handleNavigate}
+        />
+      )}
 
       <AuthModal
         isOpen={showAuth}
