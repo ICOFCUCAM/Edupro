@@ -1,18 +1,28 @@
-
 <!DOCTYPE html>
 <html lang="en">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>EduPro Lesson Generator</title>
-    <meta name="description" content="EduPro helps teachers craft tailored lesson notes for African education systems, offering printable PDFs, AI-driven updates, and multimedia resources." />
+    <title>EduPro — Africa's AI Teaching Platform</title>
+    <meta name="description" content="AI-powered lesson notes, curriculum intelligence, and teaching resources for African primary school teachers." />
+
+    <!-- PWA -->
+    <link rel="manifest" href="/manifest.json" />
+    <meta name="theme-color" content="#1d4ed8" />
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="apple-mobile-web-app-title" content="EduPro" />
+    <link rel="apple-touch-icon" href="/icons/icon-192.png" />
+
+    <!-- Favicon -->
     <link rel="icon" type="image/svg+xml" href="/placeholder.svg" />
 
-    <meta property="og:title" content="EduPro Lesson Generator" />
-    <meta property="og:description" content="EduPro helps teachers craft tailored lesson notes for African education systems, offering printable PDFs, AI-driven updates, and multimedia resources." />
+    <!-- Open Graph -->
+    <meta property="og:title" content="EduPro — Africa's AI Teaching Platform" />
+    <meta property="og:description" content="AI-powered lesson notes, curriculum intelligence, and teaching resources for African primary school teachers." />
     <meta property="og:type" content="website" />
     <meta property="og:image" content="/og.jpg" />
-
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="/og.jpg" />
   </head>
@@ -20,5 +30,23 @@
   <body>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Register Service Worker -->
+    <script>
+      if ('serviceWorker' in navigator) {
+        window.addEventListener('load', () => {
+          navigator.serviceWorker.register('/sw.js')
+            .then((reg) => console.log('[EduPro SW] registered', reg.scope))
+            .catch((err) => console.warn('[EduPro SW] registration failed', err));
+
+          // Listen for sync trigger from SW
+          navigator.serviceWorker.addEventListener('message', (event) => {
+            if (event.data?.type === 'TRIGGER_SYNC') {
+              window.dispatchEvent(new CustomEvent('edupro:sync'));
+            }
+          });
+        });
+      }
+    </script>
   </body>
 </html>
