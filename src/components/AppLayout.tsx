@@ -14,6 +14,7 @@ import AuthModal from './AuthModal';
 import Footer from './Footer';
 import ProtectedRoute from './ProtectedRoute';
 import UserDashboard from './UserDashboard';
+import OrganizationHub from './OrganizationHub';
 
 // Pages that require authentication
 const PROTECTED_PAGES: Record<string, string> = {
@@ -24,6 +25,7 @@ const PROTECTED_PAGES: Record<string, string> = {
   'dashboard': 'Dashboard',
   'my-lessons': 'My Lessons',
   'settings': 'Settings',
+  'organizations': 'Organization Hub',
 };
 
 const AppLayout: React.FC = () => {
@@ -185,6 +187,15 @@ const AppLayout: React.FC = () => {
 
       case 'pricing':
         return <PricingSection onSelectPlan={handleSelectPlan} />;
+
+      case 'organizations':
+        return (
+          <OrganizationHub
+            userId={profile?.id || user?.id || ''}
+            userCountry={profile?.country}
+            onNavigate={handleNavigate}
+          />
+        );
 
       case 'dashboard':
         return (

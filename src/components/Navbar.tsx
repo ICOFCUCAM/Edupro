@@ -40,7 +40,10 @@ const Navbar: React.FC<NavbarProps> = ({
     { id: 'knowledge-base', label: 'Knowledge Base' },
     { id: 'website-builder', label: 'Website Builder' },
     { id: 'pricing', label: 'Pricing' },
-    ...(isLoggedIn ? [{ id: 'dashboard', label: 'Dashboard' }] : []),
+    ...(isLoggedIn ? [
+      { id: 'dashboard', label: 'Dashboard' },
+      { id: 'organizations', label: 'Organizations' },
+    ] : []),
   ];
 
 
