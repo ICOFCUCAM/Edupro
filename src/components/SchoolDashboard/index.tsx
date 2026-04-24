@@ -1,13 +1,15 @@
 import React, { useState, useEffect, useRef } from 'react';
 import {
   Users, BookOpen, FileText, Brain, Upload, Plus, Loader2, Building2,
-  TrendingUp, Tag, CheckCircle2, X, BarChart3, Clock, Eye, Globe, Lock
+  TrendingUp, Tag, CheckCircle2, X, BarChart3, Clock, Eye, Globe, Lock, Target
 } from 'lucide-react';
 import {
   getOrganizationStats, getOrganizationMembers, getSchoolKnowledgeItems,
   getSchoolLessons, getTeacherLessonStats, addSchoolKnowledgeItem,
   uploadSchemeOfWork, Organization, LessonVisibility
 } from '@/services/organizationService';
+import { getCountryAlignmentStats } from '@/services/alignmentService';
+import AlignmentBadge from '@/components/AlignmentBadge';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface SchoolDashboardProps {
@@ -49,6 +51,9 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
 
   // Lesson filter
   const [lessonFilter, setLessonFilter] = useState<LessonVisibility | 'all'>('all');
+  const [alignmentStats, setAlignmentStats] = useState<{
+    avg_score: number; total_lessons: number; full: number; partial: number; needs_improvement: number;
+  } | null>(null);
 
   const isAdmin = userRole === 'school_admin' || userRole === 'district_admin' || userRole === 'ministry_admin';
 
@@ -70,6 +75,10 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
     setKnowledgeItems(k);
     setSchoolLessons(lessons);
     setTeacherStats(tStats);
+
+    getCountryAlignmentStats(organization.country).then(aStats => {
+      if (aStats.total_lessons > 0) setAlignmentStats(aStats);
+    });
 
     const freq: Record<string, number> = {};
     lessons.forEach((l: any) => { freq[l.subject] = (freq[l.subject] || 0) + 1; });
@@ -178,23 +187,52 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
 
       {/* ── Overview ── */}
       {activeTab === 'overview' && (
-        <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-            <TrendingUp className="w-5 h-5 text-blue-600" /> Subject Activity
-          </h3>
-          {subjectData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={220}>
-              <BarChart data={subjectData}>
-                <XAxis dataKey="subject" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 11 }} />
-                <Tooltip />
-                <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
-              </BarChart>
-            </ResponsiveContainer>
-          ) : (
-            <div className="text-center py-12 text-gray-400">
-              <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-30" />
-              <p className="text-sm">No lessons linked to this school yet. Teachers need to set their school when saving lessons.</p>
+        <div className="space-y-5">
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+            <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+              <TrendingUp className="w-5 h-5 text-blue-600" /> Subject Activity
+            </h3>
+            {subjectData.length > 0 ? (
+              <ResponsiveContainer width="100%" height={220}>
+                <BarChart data={subjectData}>
+                  <XAxis dataKey="subject" tick={{ fontSize: 11 }} />
+                  <YAxis tick={{ fontSize: 11 }} />
+                  <Tooltip />
+                  <Bar dataKey="count" fill="#3b82f6" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            ) : (
+              <div className="text-center py-12 text-gray-400">
+                <BookOpen className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                <p className="text-sm">No lessons linked to this school yet. Teachers need to set their school when saving lessons.</p>
+              </div>
+            )}
+          </div>
+
+          {alignmentStats && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
+                <Target className="w-5 h-5 text-indigo-600" /> Curriculum Alignment ({organization.country})
+              </h3>
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {[
+                  { label: 'Avg Score', value: `${alignmentStats.avg_score}%`, color: 'text-indigo-600' },
+                  { label: 'Fully Aligned 🟢', value: alignmentStats.full, color: 'text-emerald-600' },
+                  { label: 'Partial 🟡', value: alignmentStats.partial, color: 'text-amber-600' },
+                  { label: 'Needs Work 🔴', value: alignmentStats.needs_improvement, color: 'text-red-500' },
+                ].map((s, i) => (
+                  <div key={i} className="bg-gray-50 rounded-xl p-4 text-center">
+                    <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+                    <div className="text-xs text-gray-500 mt-1">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+              <div className="h-2.5 bg-gray-100 rounded-full overflow-hidden flex">
+                <div className="bg-emerald-500 h-full transition-all" style={{ width: `${(alignmentStats.full / alignmentStats.total_lessons) * 100}%` }} />
+                <div className="bg-amber-400 h-full transition-all" style={{ width: `${(alignmentStats.partial / alignmentStats.total_lessons) * 100}%` }} />
+                <div className="bg-red-400 h-full transition-all" style={{ width: `${(alignmentStats.needs_improvement / alignmentStats.total_lessons) * 100}%` }} />
+              </div>
+              <p className="text-xs text-gray-400 mt-1.5">{alignmentStats.total_lessons} lessons scored</p>
             </div>
           )}
         </div>
@@ -228,18 +266,30 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
             <div className="space-y-2">
               {filteredLessons.map((lesson: any) => {
                 const VIcon = VISIBILITY_ICON[lesson.visibility as LessonVisibility] || Lock;
+                const aScore = lesson.alignment_score as number | undefined;
                 return (
-                  <div key={lesson.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-blue-50/30 rounded-xl transition-all">
+                  <div key={lesson.id} className="flex items-center justify-between p-3 bg-gray-50 hover:bg-blue-50/30 rounded-xl transition-all gap-3">
                     <div className="flex-1 min-w-0">
                       <p className="text-sm font-medium text-gray-900 truncate">{lesson.title}</p>
                       <p className="text-xs text-gray-400">{lesson.subject} · {lesson.level} · {new Date(lesson.created_at).toLocaleDateString()}</p>
                     </div>
-                    <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ml-3 flex-shrink-0 ${
-                      VISIBILITY_COLOR[lesson.visibility as LessonVisibility] || 'bg-gray-100 text-gray-600'
-                    }`}>
-                      <VIcon className="w-3 h-3" />
-                      {VISIBILITY_LABEL[lesson.visibility as LessonVisibility] || lesson.visibility}
-                    </span>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {aScore !== undefined && (
+                        <span className={`text-xs font-semibold px-2 py-0.5 rounded-full ${
+                          aScore >= 75 ? 'bg-emerald-100 text-emerald-700' :
+                          aScore >= 45 ? 'bg-amber-100 text-amber-700' :
+                          'bg-red-100 text-red-600'
+                        }`}>
+                          {aScore >= 75 ? '🟢' : aScore >= 45 ? '🟡' : '🔴'} {aScore}%
+                        </span>
+                      )}
+                      <span className={`flex items-center gap-1 text-xs px-2 py-1 rounded-full font-medium ${
+                        VISIBILITY_COLOR[lesson.visibility as LessonVisibility] || 'bg-gray-100 text-gray-600'
+                      }`}>
+                        <VIcon className="w-3 h-3" />
+                        {VISIBILITY_LABEL[lesson.visibility as LessonVisibility] || lesson.visibility}
+                      </span>
+                    </div>
                   </div>
                 );
               })}

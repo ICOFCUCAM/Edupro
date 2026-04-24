@@ -2,9 +2,10 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Globe2, Building2, Users, FileText, TrendingUp, Bell, BarChart3,
-  Loader2, ChevronRight, AlertTriangle, BookOpen, Flame
+  Loader2, ChevronRight, AlertTriangle, BookOpen, Flame, Target
 } from 'lucide-react';
 import { getChildOrganizations, getOrganizationStats, Organization } from '@/services/organizationService';
+import { getCountryAlignmentStats } from '@/services/alignmentService';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, Legend
@@ -21,6 +22,9 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
   const [subjectData, setSubjectData] = useState<{ subject: string; count: number }[]>([]);
   const [weeklyData, setWeeklyData] = useState<{ week: string; lessons: number }[]>([]);
   const [totals, setTotals] = useState({ districts: 0, schools: 0, teachers: 0, lessons: 0 });
+  const [alignmentStats, setAlignmentStats] = useState<{
+    avg_score: number; total_lessons: number; full: number; partial: number; needs_improvement: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts'>('overview');
 
@@ -103,6 +107,10 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
       schools: districtStats.reduce((s, d) => s + d.stats.childCount, 0),
       teachers: districtStats.reduce((s, d) => s + d.stats.memberCount, 0),
       lessons: lessons?.length || 0,
+    });
+
+    getCountryAlignmentStats(organization.country).then(a => {
+      if (a.total_lessons > 0) setAlignmentStats(a);
     });
 
     setLoading(false);
@@ -202,6 +210,43 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
               </LineChart>
             </ResponsiveContainer>
           </div>
+
+          {/* National curriculum alignment */}
+          {alignmentStats && (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <h3 className="font-bold text-gray-900 mb-2 flex items-center gap-2">
+                <Target className="w-5 h-5 text-indigo-600" /> National Curriculum Alignment Compliance
+              </h3>
+              <p className="text-xs text-gray-400 mb-4">{alignmentStats.total_lessons} lessons scored across {organization.country}</p>
+
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
+                {[
+                  { label: 'National Avg', value: `${alignmentStats.avg_score}%`, color: 'text-indigo-600', bg: 'bg-indigo-50' },
+                  { label: '🟢 Fully Aligned', value: `${alignmentStats.full}`, color: 'text-emerald-700', bg: 'bg-emerald-50' },
+                  { label: '🟡 Partial', value: `${alignmentStats.partial}`, color: 'text-amber-700', bg: 'bg-amber-50' },
+                  { label: '🔴 Needs Work', value: `${alignmentStats.needs_improvement}`, color: 'text-red-700', bg: 'bg-red-50' },
+                ].map((s, i) => (
+                  <div key={i} className={`${s.bg} rounded-xl p-4 text-center`}>
+                    <div className={`text-2xl font-bold ${s.color}`}>{s.value}</div>
+                    <div className="text-xs text-gray-500 mt-1">{s.label}</div>
+                  </div>
+                ))}
+              </div>
+
+              <div className="h-3 bg-gray-100 rounded-full overflow-hidden flex gap-0.5">
+                <div className="bg-emerald-500 h-full rounded-l-full transition-all"
+                  style={{ width: `${(alignmentStats.full / alignmentStats.total_lessons) * 100}%` }} />
+                <div className="bg-amber-400 h-full transition-all"
+                  style={{ width: `${(alignmentStats.partial / alignmentStats.total_lessons) * 100}%` }} />
+                <div className="bg-red-400 h-full rounded-r-full transition-all"
+                  style={{ width: `${(alignmentStats.needs_improvement / alignmentStats.total_lessons) * 100}%` }} />
+              </div>
+              <div className="flex justify-between text-xs text-gray-400 mt-1">
+                <span>Fully Aligned ({Math.round((alignmentStats.full / alignmentStats.total_lessons) * 100)}%)</span>
+                <span>Needs Work ({Math.round((alignmentStats.needs_improvement / alignmentStats.total_lessons) * 100)}%)</span>
+              </div>
+            </div>
+          )}
         </div>
       )}
 

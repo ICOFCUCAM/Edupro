@@ -115,7 +115,7 @@ export async function getSchoolLessons(
 ): Promise<any[]> {
   let query = supabase
     .from('lesson_notes')
-    .select('id, title, subject, topic, level, language, visibility, created_at, teacher_id')
+    .select('id, title, subject, topic, level, language, visibility, created_at, teacher_id, lesson_alignment_scores(alignment_score, alignment_level)')
     .eq('organization_id', organizationId)
     .order('created_at', { ascending: false });
 
@@ -123,7 +123,13 @@ export async function getSchoolLessons(
 
   const { data, error } = await query;
   if (error) return [];
-  return data || [];
+
+  return (data || []).map((l: any) => ({
+    ...l,
+    alignment_score: l.lesson_alignment_scores?.[0]?.alignment_score,
+    alignment_level: l.lesson_alignment_scores?.[0]?.alignment_level,
+    lesson_alignment_scores: undefined,
+  }));
 }
 
 // ── Teacher Analytics ─────────────────────────────────────

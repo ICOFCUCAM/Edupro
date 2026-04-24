@@ -5,6 +5,8 @@ import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckC
 import { saveLessonOffline, enqueueUpload } from '@/lib/offlineDB';
 import { getUserOrganizations, Organization } from '@/services/organizationService';
 import { buildSchoolContextPrompt } from '@/services/schoolContextService';
+import { alignLessonToCurriculum, saveAlignmentScore, extractTextFromLessonNote, AlignmentResult } from '@/services/alignmentService';
+import AlignmentBadge from '@/components/AlignmentBadge';
 
 interface LessonGeneratorProps {
   teacherId?: string;
@@ -33,6 +35,9 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
   const [error, setError] = useState('');
   const [schoolOrg, setSchoolOrg] = useState<Organization | null>(null);
   const [schoolContextLabel, setSchoolContextLabel] = useState('');
+  const [alignmentResult, setAlignmentResult] = useState<AlignmentResult | null>(null);
+  const [alignmentLoading, setAlignmentLoading] = useState(false);
+  const [savedLessonId, setSavedLessonId] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   const countryData = COUNTRIES_WITH_LEVELS[formData.country];
@@ -84,6 +89,8 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     setLoading(true);
     setLessonNote(null);
     setSaved(false);
+    setAlignmentResult(null);
+    setSavedLessonId(null);
 
     if (!isOnline) {
       await new Promise(r => setTimeout(r, 600));
@@ -93,7 +100,6 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     }
 
     try {
-      // Optionally inject school context into the prompt
       let schoolContext: string | null = null;
       if (schoolOrg) {
         schoolContext = await buildSchoolContextPrompt(schoolOrg.id, schoolOrg.name);
@@ -106,6 +112,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       if (fnError) throw fnError;
       if (data?.success) {
         setLessonNote(data.lessonNote);
+        runAlignmentCheck(data.lessonNote);
       } else {
         throw new Error(data?.error || 'Failed to generate lesson note');
       }
@@ -113,6 +120,17 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       setError(err.message || 'Failed to generate. Please try again.');
     } finally {
       setLoading(false);
+    }
+  };
+
+  const runAlignmentCheck = async (note: any) => {
+    setAlignmentLoading(true);
+    try {
+      const text = extractTextFromLessonNote(note);
+      const result = await alignLessonToCurriculum(text, formData.country, formData.subject, formData.level);
+      setAlignmentResult(result);
+    } finally {
+      setAlignmentLoading(false);
     }
   };
 
@@ -152,23 +170,36 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       }
 
       const region = REGIONS.find(r => r.countries.includes(formData.country))?.name || 'West Africa';
-      const { error: saveErr } = await supabase.from('lesson_notes').insert({
-        teacher_id: teacherId,
-        title,
-        subject: formData.subject,
-        topic: formData.topic,
-        country: formData.country,
-        region,
-        level: formData.level,
-        class_name: formData.level,
-        language: formData.language,
-        content: lessonNote,
-        status: 'draft',
-        visibility,
-        organization_id: schoolOrg?.id || null,
-      });
+      const { data: insertedLesson, error: saveErr } = await supabase
+        .from('lesson_notes')
+        .insert({
+          teacher_id: teacherId,
+          title,
+          subject: formData.subject,
+          topic: formData.topic,
+          country: formData.country,
+          region,
+          level: formData.level,
+          class_name: formData.level,
+          language: formData.language,
+          content: lessonNote,
+          status: 'draft',
+          visibility,
+          organization_id: schoolOrg?.id || null,
+        })
+        .select('id')
+        .single();
 
       if (saveErr) throw saveErr;
+
+      const lessonId = insertedLesson?.id;
+      if (lessonId) {
+        setSavedLessonId(lessonId);
+        if (alignmentResult) {
+          saveAlignmentScore(lessonId, formData.country, formData.subject, formData.level, alignmentResult);
+        }
+      }
+
       setSaved(true);
       onLessonSaved?.();
     } catch (err: any) {
@@ -482,8 +513,11 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                   </div>
                 </div>
               ) : lessonNote ? (
-                <div className="overflow-x-auto">
-                  {renderLessonTable()}
+                <div className="space-y-4">
+                  <AlignmentBadge result={alignmentResult} loading={alignmentLoading} />
+                  <div className="overflow-x-auto">
+                    {renderLessonTable()}
+                  </div>
                 </div>
               ) : (
                 <div className="flex flex-col items-center justify-center py-24 text-center">
