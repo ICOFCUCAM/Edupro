@@ -3,13 +3,17 @@ import {
   BookOpen, Upload, FileText, BarChart3, CheckCircle2, AlertCircle,
   Loader2, ChevronRight, X, Play, Download, Trash2, RefreshCw,
   Search, Plus, BookMarked, Target, Layers, AlertTriangle, FileX,
+  ChevronDown, ChevronUp, GraduationCap, Mic,
 } from 'lucide-react';
 import {
   processTextbookPipeline, getTextbooks, getTextbookChapters,
   getTextbookAlignments, deleteTextbook, generateChapterContent, generateAllChapterContent,
+  searchChaptersByQuery, getSupplementaryLessons,
   type Textbook, type TextbookWithSummary, type TextbookChapter,
   type TextbookCoverageSummary, type ProcessStep,
+  type ChapterSearchResult, type SupplementaryLesson,
 } from '@/services/textbookService';
+import { supabase } from '@/lib/supabase';
 
 const SUBJECTS = [
   'Mathematics','English Language','Basic Science','Social Studies','Civic Education',
@@ -64,6 +68,19 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
   const [processError, setProcessError]   = useState('');
   const [generatingAll, setGeneratingAll] = useState(false);
   const [genProgress, setGenProgress]     = useState({ done: 0, total: 0 });
+
+  // Chapter semantic search
+  const [chapterSearch, setChapterSearch]         = useState('');
+  const [chapterSearchResults, setChapterSearchResults] = useState<ChapterSearchResult[]>([]);
+  const [chapterSearchLoading, setChapterSearchLoading] = useState(false);
+
+  // Marking scheme expand per chapter
+  const [expandedChapterId, setExpandedChapterId] = useState<string | null>(null);
+  const [markingSchemes, setMarkingSchemes]       = useState<Record<string, any>>({});
+
+  // Supplementary lessons
+  const [suppLessons, setSuppLessons]     = useState<SupplementaryLesson[]>([]);
+  const [suppLoading, setSuppLoading]     = useState(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -158,6 +175,45 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
     if (selectedBook?.id === bookId) setView('library');
   };
 
+  const handleChapterSearch = useCallback(async (q: string) => {
+    if (!q.trim()) { setChapterSearchResults([]); return; }
+    setChapterSearchLoading(true);
+    const results = await searchChaptersByQuery(q, {
+      textbookId: selectedBook?.id,
+      country,
+      subject:    selectedBook?.subject ?? undefined,
+    });
+    setChapterSearchResults(results);
+    setChapterSearchLoading(false);
+  }, [selectedBook, country]);
+
+  const handleToggleMarkingScheme = useCallback(async (ch: TextbookChapter) => {
+    if (expandedChapterId === ch.id) { setExpandedChapterId(null); return; }
+    setExpandedChapterId(ch.id);
+    if (!ch.assessment_id || markingSchemes[ch.id]) return;
+    const { data } = await supabase
+      .from('assessment_packages')
+      .select('content')
+      .eq('id', ch.assessment_id)
+      .single();
+    if (data?.content) {
+      setMarkingSchemes(prev => ({ ...prev, [ch.id]: data.content }));
+    }
+  }, [expandedChapterId, markingSchemes]);
+
+  const handleLoadSupplementary = useCallback(async () => {
+    const summary = selectedBook?.textbook_coverage_summary?.[0];
+    if (!summary?.missing_objectives?.length) return;
+    setSuppLoading(true);
+    const lessons = await getSupplementaryLessons(
+      country,
+      selectedBook?.subject ?? '',
+      summary.missing_objectives,
+    );
+    setSuppLessons(lessons);
+    setSuppLoading(false);
+  }, [selectedBook, country]);
+
   const filteredBooks = textbooks.filter(b =>
     !search ||
     b.title.toLowerCase().includes(search.toLowerCase()) ||
@@ -170,6 +226,7 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
     uploading:          'Saving to library…',
     detecting_chapters: 'Detecting chapters and subject…',
     aligning:           'Mapping to curriculum objectives…',
+    embedding:          'Building semantic search index…',
     done:               'Complete!',
     error:              'Error',
   };
@@ -260,8 +317,8 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
         {/* Progress */}
         {processStep && processStep !== 'error' && (
           <div className="bg-blue-50 border border-blue-100 rounded-xl p-4 space-y-3">
-            {(['extracting','uploading','detecting_chapters','aligning','done'] as ProcessStep[]).map(step => {
-              const steps: ProcessStep[] = ['extracting','uploading','detecting_chapters','aligning','done'];
+            {(['extracting','uploading','detecting_chapters','aligning','embedding','done'] as ProcessStep[]).map(step => {
+              const steps: ProcessStep[] = ['extracting','uploading','detecting_chapters','aligning','embedding','done'];
               const idx    = steps.indexOf(step);
               const curIdx = steps.indexOf(processStep);
               const done   = idx < curIdx || processStep === 'done';
@@ -369,6 +426,55 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
           </div>
         )}
 
+        {/* Chapter search */}
+        <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+          <div className="flex items-center gap-2">
+            <Search className="w-4 h-4 text-blue-500" />
+            <p className="text-sm font-semibold text-gray-700">Which chapter covers…?</p>
+            <span className="text-xs text-gray-400 flex items-center gap-1"><Mic className="w-3 h-3" /> Ask by voice</span>
+          </div>
+          <div className="flex gap-2">
+            <input
+              type="text"
+              placeholder="e.g. fractions, photosynthesis, civil rights…"
+              value={chapterSearch}
+              onChange={e => setChapterSearch(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && handleChapterSearch(chapterSearch)}
+              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+            />
+            <button
+              onClick={() => handleChapterSearch(chapterSearch)}
+              disabled={chapterSearchLoading || !chapterSearch.trim()}
+              className="px-4 py-2 bg-blue-600 text-white rounded-lg text-sm font-medium hover:bg-blue-700 disabled:opacity-50 transition-colors"
+            >
+              {chapterSearchLoading ? <Loader2 className="w-4 h-4 animate-spin" /> : 'Search'}
+            </button>
+          </div>
+          {chapterSearchResults.length > 0 && (
+            <div className="space-y-2 pt-1">
+              {chapterSearchResults.map(r => (
+                <div key={r.id} className="flex items-start gap-2.5 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                  <div className="w-6 h-6 bg-blue-200 rounded flex items-center justify-center text-[10px] font-bold text-blue-700 flex-shrink-0 mt-0.5">
+                    {r.chapter_number}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900">{r.chapter_title}</p>
+                    {r.content && <p className="text-xs text-gray-500 mt-0.5 line-clamp-2">{r.content}</p>}
+                    <div className="flex items-center gap-2 mt-1">
+                      <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">
+                        {r.match_type === 'semantic' ? `${r.similarity}% match` : 'keyword match'}
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+          {!chapterSearchLoading && chapterSearch.trim() && chapterSearchResults.length === 0 && (
+            <p className="text-xs text-gray-400 pt-1">No chapters found for "{chapterSearch}". Try a different keyword.</p>
+          )}
+        </div>
+
         {/* Extra topics not in curriculum */}
         {summary && summary.extra_topics?.length > 0 && (
           <div className="bg-amber-50 border border-amber-200 rounded-xl p-4">
@@ -381,6 +487,45 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
                 <span key={i} className="text-xs bg-amber-100 text-amber-700 px-2 py-0.5 rounded-full">{t}</span>
               ))}
             </div>
+          </div>
+        )}
+
+        {/* Supplementary lesson recommendations */}
+        {summary && summary.missing_objectives?.length > 0 && (
+          <div className="bg-white border border-gray-200 rounded-xl p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <GraduationCap className="w-4 h-4 text-purple-500" />
+                <p className="text-sm font-semibold text-gray-700">Supplementary Lessons for Missing Objectives</p>
+              </div>
+              {!suppLessons.length && (
+                <button
+                  onClick={handleLoadSupplementary}
+                  disabled={suppLoading}
+                  className="text-xs text-purple-600 hover:text-purple-700 font-medium disabled:opacity-50"
+                >
+                  {suppLoading ? <Loader2 className="w-3 h-3 animate-spin inline" /> : 'Load suggestions'}
+                </button>
+              )}
+            </div>
+            {suppLessons.length > 0 ? (
+              <div className="space-y-2">
+                {suppLessons.map(l => (
+                  <div key={l.id} className="flex items-start gap-2.5 p-3 bg-purple-50 rounded-lg border border-purple-100">
+                    <FileText className="w-4 h-4 text-purple-400 flex-shrink-0 mt-0.5" />
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-gray-900 truncate">{l.title}</p>
+                      <p className="text-xs text-purple-600 mt-0.5">{l.topic}</p>
+                    </div>
+                    <span className="text-[10px] bg-purple-100 text-purple-600 px-1.5 py-0.5 rounded flex-shrink-0">
+                      {l.class_level ?? ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            ) : !suppLoading ? (
+              <p className="text-xs text-gray-400">Click "Load suggestions" to find supplementary lessons that fill curriculum gaps.</p>
+            ) : null}
           </div>
         )}
 
@@ -407,35 +552,81 @@ const TextbookLibrary: React.FC<TextbookLibraryProps> = ({
         {/* Chapter list */}
         <div className="space-y-2">
           <p className="text-sm font-semibold text-gray-700">Chapters ({chapters.length})</p>
-          {chapters.map(ch => (
-            <div key={ch.id}
-              className="flex items-center gap-3 p-3 bg-white border border-gray-200 rounded-xl hover:border-blue-200 transition-colors"
-            >
-              <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
-                {ch.chapter_number}
-              </div>
-              <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">{ch.chapter_title}</p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {ch.lesson_note_id
-                    ? <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Lesson ✓</span>
-                    : <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">No lesson</span>}
-                  {ch.assessment_id
-                    ? <span className="text-[10px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">Quiz ✓</span>
-                    : <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">No quiz</span>}
-                  {ch.word_count && <span className="text-[10px] text-gray-400">{ch.word_count} words</span>}
+          {chapters.map(ch => {
+            const isExpanded = expandedChapterId === ch.id;
+            const scheme     = markingSchemes[ch.id];
+            return (
+              <div key={ch.id} className="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div className="flex items-center gap-3 p-3">
+                  <div className="w-8 h-8 bg-gray-100 rounded-lg flex items-center justify-center text-xs font-bold text-gray-500 flex-shrink-0">
+                    {ch.chapter_number}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-900 truncate">{ch.chapter_title}</p>
+                    <div className="flex items-center gap-2 mt-0.5">
+                      {ch.lesson_note_id
+                        ? <span className="text-[10px] bg-blue-100 text-blue-600 px-1.5 py-0.5 rounded">Lesson ✓</span>
+                        : <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">No lesson</span>}
+                      {ch.assessment_id
+                        ? <span className="text-[10px] bg-violet-100 text-violet-600 px-1.5 py-0.5 rounded">Quiz ✓</span>
+                        : <span className="text-[10px] bg-gray-100 text-gray-400 px-1.5 py-0.5 rounded">No quiz</span>}
+                      {ch.word_count && <span className="text-[10px] text-gray-400">{ch.word_count} words</span>}
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    {ch.assessment_id && (
+                      <button
+                        onClick={() => handleToggleMarkingScheme(ch)}
+                        className="flex items-center gap-1 px-2 py-1.5 bg-violet-50 text-violet-600 rounded-lg text-xs font-medium hover:bg-violet-100 transition-colors"
+                        title="View marking scheme"
+                      >
+                        {isExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                        Scheme
+                      </button>
+                    )}
+                    {!ch.lesson_note_id && (
+                      <button
+                        onClick={() => handleGenerateChapter(ch.id)}
+                        className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors"
+                      >
+                        <Play className="w-3 h-3" /> Generate
+                      </button>
+                    )}
+                  </div>
                 </div>
+
+                {/* Marking scheme panel */}
+                {isExpanded && (
+                  <div className="border-t border-gray-100 px-4 py-3 bg-violet-50/40">
+                    {scheme ? (
+                      <div className="space-y-2">
+                        <p className="text-xs font-semibold text-violet-700">Marking Scheme</p>
+                        {(scheme.marking_scheme ?? scheme.sections?.[0]?.marking_scheme ?? []).length > 0 ? (
+                          (scheme.marking_scheme ?? scheme.sections?.[0]?.marking_scheme ?? []).slice(0, 8).map((item: any, i: number) => (
+                            <div key={i} className="flex gap-2 text-xs">
+                              <span className="text-violet-400 font-bold flex-shrink-0">{i + 1}.</span>
+                              <div>
+                                <span className="text-gray-700">{item.answer ?? item.expected_answer ?? item.key_points ?? item}</span>
+                                {item.marks && <span className="ml-2 text-violet-600 font-medium">({item.marks} mark{item.marks > 1 ? 's' : ''})</span>}
+                              </div>
+                            </div>
+                          ))
+                        ) : (
+                          <pre className="text-xs text-gray-600 whitespace-pre-wrap overflow-auto max-h-48">
+                            {JSON.stringify(scheme, null, 2).slice(0, 800)}
+                          </pre>
+                        )}
+                      </div>
+                    ) : (
+                      <div className="flex items-center gap-2 text-xs text-violet-500">
+                        <Loader2 className="w-3 h-3 animate-spin" /> Loading marking scheme…
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
-              {!ch.lesson_note_id && (
-                <button
-                  onClick={() => handleGenerateChapter(ch.id)}
-                  className="flex items-center gap-1 px-2.5 py-1.5 bg-blue-50 text-blue-600 rounded-lg text-xs font-medium hover:bg-blue-100 transition-colors flex-shrink-0"
-                >
-                  <Play className="w-3 h-3" /> Generate
-                </button>
-              )}
-            </div>
-          ))}
+            );
+          })}
         </div>
       </div>
     );

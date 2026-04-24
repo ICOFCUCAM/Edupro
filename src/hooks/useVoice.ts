@@ -17,6 +17,7 @@ export interface VoiceEntities {
   difficulty?:       string;
   question_count?:   string;
   target_language?:  string;
+  textbook_query?:   string;
 }
 
 export interface VoiceResult {
@@ -360,6 +361,29 @@ export function useVoice(options: UseVoiceOptions) {
           } else {
             finalResponse = 'Please sign in to save dictated lessons.';
           }
+          break;
+        }
+
+        // ── Ask textbook (semantic chapter search) ───────────────────────
+        case 'ask_textbook': {
+          const tbQuery = entities.textbook_query || entities.topic || text;
+          speak(`Searching your textbook for ${tbQuery}…`);
+          const searchRes = await supabase.functions.invoke('textbook-search', {
+            body: {
+              query:     tbQuery,
+              teacherId: teacherId ?? null,
+              country:   teacherCountry,
+              subject:   teacherSubject ?? null,
+              matchCount: 3,
+            },
+          });
+          if (searchRes.data?.chapters?.length) {
+            const top = searchRes.data.chapters[0];
+            finalResponse = `Found it. ${top.textbook_title ? `In "${top.textbook_title}", ` : ''}Chapter ${top.chapter_number}: "${top.chapter_title}" covers ${tbQuery}.`;
+          } else {
+            finalResponse = `I could not find a chapter covering "${tbQuery}" in your textbooks. Try uploading your textbook in the Textbook Library.`;
+          }
+          actionTaken = 'textbook_searched';
           break;
         }
 

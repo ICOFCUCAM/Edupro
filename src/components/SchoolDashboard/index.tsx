@@ -17,6 +17,7 @@ import AlignmentBadge from '@/components/AlignmentBadge';
 import ClassAnalyticsDashboard from '@/components/ClassAnalyticsDashboard';
 import TextbookLibrary from '@/components/TextbookLibrary';
 import { BookMarked } from 'lucide-react';
+import { getTextbooks, type TextbookWithSummary } from '@/services/textbookService';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface SchoolDashboardProps {
@@ -57,6 +58,9 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
   const [uploadAlignment, setUploadAlignment] = useState<DualAlignmentResult | null>(null);
   const fileRef = useRef<HTMLInputElement>(null);
 
+  // Textbook coverage mini-card
+  const [recentTextbook, setRecentTextbook] = useState<TextbookWithSummary | null>(null);
+
   // Lesson filter
   const [lessonFilter, setLessonFilter] = useState<LessonVisibility | 'all'>('all');
   const [alignmentStats, setAlignmentStats] = useState<{
@@ -86,6 +90,11 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
 
     getCountryAlignmentStats(organization.country).then(aStats => {
       if (aStats.total_lessons > 0) setAlignmentStats(aStats);
+    });
+
+    getTextbooks(organization.id).then(books => {
+      const ready = books.find(b => b.textbook_coverage_summary?.length);
+      if (ready) setRecentTextbook(ready);
     });
 
     const freq: Record<string, number> = {};
@@ -276,6 +285,35 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
               <p className="text-xs text-gray-400 mt-1.5">{alignmentStats.total_lessons} lessons scored</p>
             </div>
           )}
+
+          {/* Textbook coverage mini-card */}
+          {recentTextbook && (() => {
+            const s   = recentTextbook.textbook_coverage_summary![0];
+            const pct = s.coverage_percentage;
+            const barColor = pct >= 80 ? 'bg-emerald-500' : pct >= 60 ? 'bg-blue-500' : pct >= 40 ? 'bg-amber-400' : 'bg-red-400';
+            const textColor = pct >= 80 ? 'text-emerald-600' : pct >= 60 ? 'text-blue-600' : pct >= 40 ? 'text-amber-600' : 'text-red-600';
+            return (
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-5 cursor-pointer hover:border-blue-200 transition-colors"
+                onClick={() => setActiveTab('textbooks')}>
+                <div className="flex items-center justify-between mb-3">
+                  <h3 className="font-bold text-gray-900 flex items-center gap-2">
+                    <BookMarked className="w-4 h-4 text-blue-600" /> Textbook Coverage
+                  </h3>
+                  <span className={`text-sm font-bold ${textColor}`}>{pct}%</span>
+                </div>
+                <p className="text-sm text-gray-600 truncate mb-2">{recentTextbook.title}</p>
+                <div className="h-2 bg-gray-100 rounded-full overflow-hidden mb-3">
+                  <div className={`h-full rounded-full ${barColor}`} style={{ width: `${pct}%` }} />
+                </div>
+                <div className="flex gap-4 text-xs text-gray-500">
+                  <span>{s.covered_objectives}/{s.total_objectives} objectives covered</span>
+                  {s.missing_objectives?.length > 0 && (
+                    <span className="text-red-500">{s.missing_objectives.length} missing</span>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
         </div>
       )}
 

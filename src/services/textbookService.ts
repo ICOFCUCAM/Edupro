@@ -65,8 +65,29 @@ export type ProcessStep =
   | 'uploading'
   | 'detecting_chapters'
   | 'aligning'
+  | 'embedding'
   | 'done'
   | 'error';
+
+export interface ChapterSearchResult {
+  id:             string;
+  textbook_id:    string;
+  textbook_title: string;
+  chapter_number: string;
+  chapter_title:  string;
+  content:        string;
+  similarity:     number;
+  match_type:     'semantic' | 'keyword';
+}
+
+export interface SupplementaryLesson {
+  id:        string;
+  title:     string;
+  topic:     string;
+  content:   string;
+  class_level?: string;
+  created_at: string;
+}
 
 // ── File text extraction (client-side) ───────────────────────────────────────
 
@@ -285,6 +306,10 @@ export async function processTextbookPipeline(opts: PipelineOptions): Promise<{
     await supabase.from('textbooks').update({ status: 'ready' }).eq('id', textbookId);
   }
 
+  // ── Step 5: Generate chapter embeddings (non-fatal, fire-and-forget) ─
+  onProgress('embedding', 'Generating semantic search index…');
+  supabase.functions.invoke('textbook-embed-chapters', { body: { textbookId } }).catch(() => {});
+
   // ── Fetch final summary ──────────────────────────────────────────────
   onProgress('done', 'Processing complete.');
   const summary = await getTextbookCoverage(textbookId);
@@ -369,4 +394,53 @@ export async function compareTextbooksForMinistry(country: string, subject?: str
       };
     })
     .sort((a, b) => b.coverage_percentage - a.coverage_percentage);
+}
+
+// ── Semantic / keyword chapter search ────────────────────────────────────────
+
+export async function searchChaptersByQuery(
+  query: string,
+  opts?: { textbookId?: string; country?: string; subject?: string; matchCount?: number; teacherId?: string },
+): Promise<ChapterSearchResult[]> {
+  const { data, error } = await supabase.functions.invoke('textbook-search', {
+    body: {
+      query,
+      teacherId:  opts?.teacherId  ?? null,
+      textbookId: opts?.textbookId ?? null,
+      country:    opts?.country    ?? null,
+      subject:    opts?.subject    ?? null,
+      matchCount: opts?.matchCount ?? 5,
+    },
+  });
+  if (error || !data?.success) return [];
+  return (data.chapters ?? []) as ChapterSearchResult[];
+}
+
+// ── Supplementary lessons for missing objectives ──────────────────────────────
+
+export async function getSupplementaryLessons(
+  country: string,
+  subject: string,
+  missingObjectives: string[],
+  limit = 5,
+): Promise<SupplementaryLesson[]> {
+  if (!missingObjectives.length) return [];
+
+  // Search lesson_notes whose topic matches any missing objective keyword
+  const keywords = missingObjectives
+    .flatMap(o => o.toLowerCase().split(/\s+/))
+    .filter(w => w.length > 3)
+    .slice(0, 6);
+
+  if (!keywords.length) return [];
+
+  const likeExpr = `%${keywords.slice(0, 3).join('%')}%`;
+
+  const { data } = await supabase
+    .from('lesson_notes')
+    .select('id, title, topic, content, class_level, created_at')
+    .ilike('topic', likeExpr)
+    .limit(limit);
+
+  return (data ?? []) as SupplementaryLesson[];
 }

@@ -80,7 +80,7 @@ IMPORTANT — respond ONLY with a single valid JSON object. No markdown, no expl
 
 JSON format:
 {
-  "intent": "<one of: generate_lesson | generate_assessment | check_mastery | ask_country_agent | check_alignment | translate_content | dictate_lesson | general_question>",
+  "intent": "<one of: generate_lesson | generate_assessment | check_mastery | ask_country_agent | check_alignment | translate_content | dictate_lesson | ask_textbook | general_question>",
   "entities": {
     "country": "<extracted or teacher default>",
     "subject": "<extracted or teacher default>",
@@ -89,9 +89,10 @@ JSON format:
     "assessment_type": "<quiz|test|homework|class_exercise|exam or null>",
     "difficulty": "<easy|standard|advanced|mixed or null>",
     "question_count": "<number string or null>",
-    "target_language": "<en|fr|ar|sw|pt|pcm or null>"
+    "target_language": "<en|fr|ar|sw|pt|pcm or null>",
+    "textbook_query": "<the raw search phrase for ask_textbook intent, e.g. 'fractions', 'chapter on photosynthesis' — or null>"
   },
-  "spoken_response": "<1–3 sentence spoken answer for informational intents. EMPTY STRING for action intents (generate_lesson, generate_assessment, dictate_lesson, check_alignment, translate_content).>",
+  "spoken_response": "<1–3 sentence spoken answer for informational intents. EMPTY STRING for action intents (generate_lesson, generate_assessment, dictate_lesson, check_alignment, translate_content, ask_textbook).>",
   "confidence": <0.0 to 1.0>
 }
 
@@ -103,11 +104,13 @@ Intent rules:
 - check_alignment      : teacher asks to check/verify if a lesson is aligned to curriculum
 - translate_content    : teacher wants content translated to another language
 - dictate_lesson       : teacher is dictating lesson content aloud ("lesson title:", "objectives:", "today we will learn…")
+- ask_textbook         : teacher asks which chapter in the textbook covers a topic ("which chapter covers fractions?", "where is photosynthesis in the textbook?", "find me the chapter on algebra")
 - general_question     : questions about pedagogy, methodology, definitions, explanations
 
 Spoken response rules:
 • For check_mastery: use the performance data. If no data, say how to get started.
 • For ask_country_agent: use the country knowledge block to give a specific, factual answer grounded in ${teacherCountry}'s curriculum policy. Cite the policy name if possible.
+• For ask_textbook: return EMPTY STRING — the client handles the search and speaks the result.
 • For general_question: give a helpful 1–3 sentence pedagogical answer.
 • Language of spoken_response: match the teacher's language (${language}).
 • Pidgin (pcm): write the response in Nigerian/Cameroonian Pidgin English if language is 'pcm'.`;
