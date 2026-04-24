@@ -37,6 +37,7 @@ const Navbar: React.FC<NavbarProps> = ({
     { id: 'lesson-generator', label: 'Lesson Notes' },
     { id: 'content-library', label: 'Content Library' },
     { id: 'exam-bank', label: 'Exam Bank' },
+    { id: 'assessments', label: 'Assessments' },
     { id: 'knowledge-base', label: 'Knowledge Base' },
     { id: 'website-builder', label: 'Website Builder' },
     { id: 'pricing', label: 'Pricing' },

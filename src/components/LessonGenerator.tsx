@@ -1,7 +1,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { REGIONS, COUNTRIES_WITH_LEVELS, SUBJECTS } from '@/lib/constants';
-import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2, WifiOff, Building2, Lock, Globe, Eye } from 'lucide-react';
+import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2, WifiOff, Building2, Lock, Globe, Eye, ClipboardList } from 'lucide-react';
 import { saveLessonOffline, enqueueUpload } from '@/lib/offlineDB';
 import { getUserOrganizations, Organization } from '@/services/organizationService';
 import { buildSchoolContextPrompt } from '@/services/schoolContextService';
@@ -12,6 +12,7 @@ import AlignmentBadge from '@/components/AlignmentBadge';
 interface LessonGeneratorProps {
   teacherId?: string;
   onLessonSaved?: () => void;
+  onNavigate?: (page: string) => void;
   isOnline?: boolean;
 }
 
@@ -23,7 +24,7 @@ const VISIBILITY_OPTIONS: { value: Visibility; label: string; icon: React.Elemen
   { value: 'general',     label: 'Public',        icon: Globe,     desc: 'Visible to all teachers' },
 ];
 
-const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSaved, isOnline = true }) => {
+const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSaved, onNavigate, isOnline = true }) => {
   const [formData, setFormData] = useState({
     country: 'Nigeria', subject: 'Mathematics', topic: '',
     level: 'Primary 3', week: '1', language: 'English', additionalNotes: ''
@@ -493,6 +494,15 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                           <span className="text-xs text-blue-500">Will sync when connected</span>
                         )}
                       </div>
+                    )}
+                    {saved && onNavigate && (
+                      <button
+                        onClick={() => onNavigate('assessments')}
+                        className="flex items-center gap-1.5 px-4 py-2 bg-violet-50 text-violet-700 rounded-lg text-sm font-medium hover:bg-violet-100 transition-all"
+                        title="Generate an assessment for this lesson topic"
+                      >
+                        <ClipboardList className="w-4 h-4" /> Generate Assessment
+                      </button>
                     )}
                     <button onClick={handlePrint}
                       className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-all">

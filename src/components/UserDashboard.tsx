@@ -4,8 +4,10 @@ import type { TeacherProfile } from '@/hooks/useAuth';
 import {
   User, BookOpen, FileText, Star, CreditCard, Settings, Globe2, Calendar,
   Sparkles, Download, Printer, Trash2, Eye, ChevronRight, Award, BarChart3,
-  Clock, Loader2, Save, CheckCircle2, AlertCircle, Edit3, Mail, Building, MapPin, Target
+  Clock, Loader2, Save, CheckCircle2, AlertCircle, Edit3, Mail, Building, MapPin, Target,
+  ClipboardList,
 } from 'lucide-react';
+import AssessmentGenerator from './AssessmentGenerator';
 import ConnectionBadge from './ConnectionBadge';
 import AlignmentBadge from './AlignmentBadge';
 import {
@@ -18,7 +20,7 @@ interface UserDashboardProps {
   profile: TeacherProfile | null;
   onNavigate: (page: string) => void;
   onUpdateProfile: (updates: Partial<TeacherProfile>) => Promise<{ success: boolean; error?: string }>;
-  initialTab?: 'overview' | 'lessons' | 'saved' | 'settings';
+  initialTab?: 'overview' | 'lessons' | 'saved' | 'settings' | 'assessments';
   isOnline?: boolean;
   syncStatus?: SyncStatus;
   pendingCount?: number;
@@ -52,7 +54,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   profile, onNavigate, onUpdateProfile, initialTab,
   isOnline = true, syncStatus = 'idle', pendingCount = 0, lastSyncTime, onSyncClick,
 }) => {
-  const [activeTab, setActiveTab] = useState<'overview' | 'lessons' | 'saved' | 'settings'>(initialTab || 'overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'lessons' | 'saved' | 'settings' | 'assessments'>(initialTab || 'overview');
 
   const [lessons, setLessons] = useState<LessonRecord[]>([]);
   const [savedItems, setSavedItems] = useState<SavedItem[]>([]);
@@ -159,6 +161,7 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
   const tabs = [
     { id: 'overview' as const, label: 'Overview', icon: BarChart3 },
     { id: 'lessons' as const, label: 'My Lessons', icon: FileText },
+    { id: 'assessments' as const, label: 'Assessments', icon: ClipboardList },
     { id: 'saved' as const, label: 'Saved Content', icon: Star },
     { id: 'settings' as const, label: 'Settings', icon: Settings },
   ];
@@ -257,6 +260,15 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                   <div>
                     <div className="font-semibold text-sm text-gray-900">Exam Bank</div>
                     <div className="text-xs text-gray-500">Past papers & practice</div>
+                  </div>
+                  <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
+                </button>
+                <button onClick={() => setActiveTab('assessments')}
+                  className="flex items-center gap-3 p-4 bg-violet-50 rounded-xl hover:bg-violet-100 transition-all text-left">
+                  <ClipboardList className="w-5 h-5 text-violet-600" />
+                  <div>
+                    <div className="font-semibold text-sm text-gray-900">Assessments</div>
+                    <div className="text-xs text-gray-500">Generate exercises & tests</div>
                   </div>
                   <ChevronRight className="w-4 h-4 text-gray-400 ml-auto" />
                 </button>
@@ -426,6 +438,16 @@ const UserDashboard: React.FC<UserDashboardProps> = ({
                 </div>
               ))
             )}
+          </div>
+        )}
+
+        {/* ==================== ASSESSMENTS ==================== */}
+        {activeTab === 'assessments' && (
+          <div className="pb-12">
+            <AssessmentGenerator
+              teacherId={profile.id}
+              teacherCountry={profile.country}
+            />
           </div>
         )}
 

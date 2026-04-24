@@ -15,6 +15,7 @@ import Footer from './Footer';
 import ProtectedRoute from './ProtectedRoute';
 import UserDashboard from './UserDashboard';
 import OrganizationHub from './OrganizationHub';
+import AssessmentGenerator from './AssessmentGenerator';
 
 // Pages that require authentication
 const PROTECTED_PAGES: Record<string, string> = {
@@ -26,6 +27,8 @@ const PROTECTED_PAGES: Record<string, string> = {
   'my-lessons': 'My Lessons',
   'settings': 'Settings',
   'organizations': 'Organization Hub',
+  'assessments': 'Assessment Generator',
+  'my-assessments': 'My Assessments',
 };
 
 const AppLayout: React.FC = () => {
@@ -169,6 +172,7 @@ const AppLayout: React.FC = () => {
           <LessonGenerator
             teacherId={profile?.id}
             onLessonSaved={handleLessonSaved}
+            onNavigate={handleNavigate}
             isOnline={isOnline}
           />
         );
@@ -184,6 +188,14 @@ const AppLayout: React.FC = () => {
 
       case 'website-builder':
         return <WebsiteBuilder />;
+
+      case 'assessments':
+        return (
+          <AssessmentGenerator
+            teacherId={profile?.id}
+            teacherCountry={profile?.country}
+          />
+        );
 
       case 'pricing':
         return <PricingSection onSelectPlan={handleSelectPlan} />;
@@ -210,6 +222,11 @@ const AppLayout: React.FC = () => {
       case 'settings':
         return (
           <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="settings"
+            isOnline={isOnline} syncStatus={syncStatus} pendingCount={pendingCount} lastSyncTime={lastSyncTime} onSyncClick={triggerSync} />
+        );
+      case 'my-assessments':
+        return (
+          <UserDashboard profile={profile} onNavigate={handleNavigate} onUpdateProfile={updateProfile} initialTab="assessments"
             isOnline={isOnline} syncStatus={syncStatus} pendingCount={pendingCount} lastSyncTime={lastSyncTime} onSyncClick={triggerSync} />
         );
 
