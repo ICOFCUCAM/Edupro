@@ -1,8 +1,10 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import { REGIONS, COUNTRIES_WITH_LEVELS, SUBJECTS } from '@/lib/constants';
-import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2, WifiOff } from 'lucide-react';
+import { BookOpen, Printer, Loader2, Sparkles, FileText, RotateCcw, Save, CheckCircle2, WifiOff, Building2, Lock, Globe, Eye } from 'lucide-react';
 import { saveLessonOffline, enqueueUpload } from '@/lib/offlineDB';
+import { getUserOrganizations, Organization } from '@/services/organizationService';
+import { buildSchoolContextPrompt } from '@/services/schoolContextService';
 
 interface LessonGeneratorProps {
   teacherId?: string;
@@ -10,21 +12,42 @@ interface LessonGeneratorProps {
   isOnline?: boolean;
 }
 
+type Visibility = 'private' | 'school_only' | 'general';
+
+const VISIBILITY_OPTIONS: { value: Visibility; label: string; icon: React.ElementType; desc: string }[] = [
+  { value: 'private',     label: 'Private',      icon: Lock,      desc: 'Only you can see this' },
+  { value: 'school_only', label: 'School Only',   icon: Building2, desc: 'Share with your school' },
+  { value: 'general',     label: 'Public',        icon: Globe,     desc: 'Visible to all teachers' },
+];
+
 const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSaved, isOnline = true }) => {
   const [formData, setFormData] = useState({
     country: 'Nigeria', subject: 'Mathematics', topic: '',
     level: 'Primary 3', week: '1', language: 'English', additionalNotes: ''
   });
+  const [visibility, setVisibility] = useState<Visibility>('private');
   const [loading, setLoading] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [lessonNote, setLessonNote] = useState<any>(null);
   const [error, setError] = useState('');
+  const [schoolOrg, setSchoolOrg] = useState<Organization | null>(null);
+  const [schoolContextLabel, setSchoolContextLabel] = useState('');
   const printRef = useRef<HTMLDivElement>(null);
 
   const countryData = COUNTRIES_WITH_LEVELS[formData.country];
   const levels = countryData?.levels || ['Primary 1', 'Primary 2', 'Primary 3'];
   const curriculum = countryData?.curriculum || 'National Curriculum';
+
+  // Load teacher's school affiliation
+  useEffect(() => {
+    if (!teacherId || !isOnline) return;
+    getUserOrganizations(teacherId).then(orgs => {
+      const school = orgs.find(o => o.type === 'school' || o.type === 'ngo' || o.type === 'training_center');
+      setSchoolOrg(school || null);
+      if (school) setSchoolContextLabel(`Using school context: ${school.name}`);
+    });
+  }, [teacherId]);
 
   const handleChange = (field: string, value: string) => {
     setFormData(prev => {
@@ -37,10 +60,10 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     });
   };
 
+  // Offline template fallback
   const buildOfflineLesson = () => {
     const { subject, topic, level, country, language, week } = formData;
-    const countryData = COUNTRIES_WITH_LEVELS[country];
-    const curr = countryData?.curriculum || 'National Curriculum';
+    const curr = COUNTRIES_WITH_LEVELS[country]?.curriculum || 'National Curriculum';
     return {
       title: `${subject} – ${topic}`,
       columns: ['Step', 'Teacher Activity', 'Pupil Activity', 'Resources', 'Assessment'],
@@ -51,7 +74,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
         { Step: 'Conclusion (5 min)', 'Teacher Activity': 'Summarise key points. Set homework.', 'Pupil Activity': 'Answer summary questions.', Resources: 'Chalkboard', Assessment: 'Exit ticket' },
       ],
       metadata: { Subject: subject, Topic: topic, 'Class/Level': level, Week: `Week ${week}`, Curriculum: curr, Language: language, Country: country },
-      teacherNotes: `This is an offline template for "${topic}". Regenerate online for a fully AI-personalised lesson note.`,
+      teacherNotes: `Offline template for "${topic}". Regenerate online for a fully AI-personalised lesson note.`,
     };
   };
 
@@ -63,7 +86,6 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     setSaved(false);
 
     if (!isOnline) {
-      // Offline: use template fallback
       await new Promise(r => setTimeout(r, 600));
       setLessonNote(buildOfflineLesson());
       setLoading(false);
@@ -71,8 +93,14 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
     }
 
     try {
+      // Optionally inject school context into the prompt
+      let schoolContext: string | null = null;
+      if (schoolOrg) {
+        schoolContext = await buildSchoolContextPrompt(schoolOrg.id, schoolOrg.name);
+      }
+
       const { data, error: fnError } = await supabase.functions.invoke('generate-lesson-note', {
-        body: formData
+        body: { ...formData, schoolContext }
       });
 
       if (fnError) throw fnError;
@@ -96,7 +124,6 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       const contentStr = JSON.stringify(lessonNote);
 
       if (!isOnline) {
-        // Save to IndexedDB; will sync when online
         const offlineId = `offline_${Date.now()}`;
         await saveLessonOffline({
           id: offlineId,
@@ -105,7 +132,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
           class_level: formData.level,
           title,
           content: contentStr,
-          visibility: 'private',
+          visibility,
           created_at: new Date().toISOString(),
           synced: false,
         });
@@ -137,10 +164,11 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
         language: formData.language,
         content: lessonNote,
         status: 'draft',
+        visibility,
+        organization_id: schoolOrg?.id || null,
       });
 
       if (saveErr) throw saveErr;
-
       setSaved(true);
       onLessonSaved?.();
     } catch (err: any) {
@@ -206,9 +234,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
             <thead>
               <tr>
                 {columns.map((col: string, i: number) => (
-                  <th key={i} className="bg-blue-700 text-white px-3 py-2 text-left text-xs font-semibold border border-blue-800 whitespace-nowrap">
-                    {col}
-                  </th>
+                  <th key={i} className="bg-blue-700 text-white px-3 py-2 text-left text-xs font-semibold border border-blue-800 whitespace-nowrap">{col}</th>
                 ))}
               </tr>
             </thead>
@@ -216,9 +242,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
               {rows.map((row: any, ri: number) => (
                 <tr key={ri} className={ri % 2 === 0 ? 'bg-white' : 'bg-blue-50'}>
                   {columns.map((col: string, ci: number) => (
-                    <td key={ci} className="px-3 py-2 border border-gray-200 text-xs text-gray-700 align-top min-w-[120px]">
-                      {row[col] || '-'}
-                    </td>
+                    <td key={ci} className="px-3 py-2 border border-gray-200 text-xs text-gray-700 align-top min-w-[120px]">{row[col] || '-'}</td>
                   ))}
                 </tr>
               ))}
@@ -254,7 +278,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
       {/* Header */}
       <div className="bg-gradient-to-r from-blue-700 to-blue-900 text-white py-12 px-4">
         <div className="max-w-7xl mx-auto">
-          <div className="flex items-center gap-3 mb-4">
+          <div className="flex items-center gap-3 mb-4 flex-wrap">
             <div className="w-12 h-12 bg-white/20 rounded-xl flex items-center justify-center">
               <Sparkles className="w-6 h-6" />
             </div>
@@ -267,6 +291,11 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                 <WifiOff className="w-3.5 h-3.5" /> Offline — Template Mode
               </span>
             )}
+            {schoolOrg && isOnline && (
+              <span className="ml-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-emerald-700/60 border border-emerald-400/40 text-emerald-100 text-xs font-medium">
+                <Building2 className="w-3.5 h-3.5" /> {schoolOrg.name}
+              </span>
+            )}
           </div>
         </div>
       </div>
@@ -277,8 +306,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 sticky top-24">
               <h2 className="text-lg font-bold text-gray-900 mb-4 flex items-center gap-2">
-                <FileText className="w-5 h-5 text-blue-600" />
-                Lesson Details
+                <FileText className="w-5 h-5 text-blue-600" /> Lesson Details
               </h2>
 
               <div className="space-y-4">
@@ -334,13 +362,13 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                   <label className="block text-sm font-medium text-gray-700 mb-1">Language</label>
                   <select value={formData.language} onChange={e => handleChange('language', e.target.value)}
                     className="w-full px-4 py-2.5 border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent outline-none text-sm bg-white">
-                    <option value="English">English</option>
-                    <option value="French">French</option>
-                    <option value="Spanish">Spanish</option>
-                    <option value="Swahili">Swahili</option>
-                    <option value="Hausa">Hausa</option>
-                    <option value="Yoruba">Yoruba</option>
-                    <option value="Amharic">Amharic</option>
+                    <option>English</option>
+                    <option>French</option>
+                    <option>Spanish</option>
+                    <option>Swahili</option>
+                    <option>Hausa</option>
+                    <option>Yoruba</option>
+                    <option>Amharic</option>
                   </select>
                 </div>
 
@@ -351,15 +379,53 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                     rows={3} placeholder="Any specific requirements..." />
                 </div>
 
+                {/* Visibility selector */}
+                {teacherId && (
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Visibility when saved</label>
+                    <div className="space-y-2">
+                      {VISIBILITY_OPTIONS.map(opt => {
+                        const Icon = opt.icon;
+                        const disabled = opt.value === 'school_only' && !schoolOrg;
+                        return (
+                          <label key={opt.value} className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-pointer transition-all ${
+                            disabled ? 'opacity-40 cursor-not-allowed' : 'hover:bg-gray-50'
+                          } ${visibility === opt.value ? 'border-blue-400 bg-blue-50' : 'border-gray-200'}`}>
+                            <input type="radio" name="visibility" value={opt.value}
+                              checked={visibility === opt.value}
+                              disabled={disabled}
+                              onChange={() => !disabled && setVisibility(opt.value)}
+                              className="sr-only" />
+                            <Icon className={`w-4 h-4 flex-shrink-0 ${visibility === opt.value ? 'text-blue-600' : 'text-gray-400'}`} />
+                            <div>
+                              <span className={`text-xs font-medium ${visibility === opt.value ? 'text-blue-700' : 'text-gray-700'}`}>{opt.label}</span>
+                              {opt.value === 'school_only' && !schoolOrg && (
+                                <p className="text-xs text-gray-400">Join a school to enable</p>
+                              )}
+                            </div>
+                          </label>
+                        );
+                      })}
+                    </div>
+                  </div>
+                )}
+
+                {/* School context indicator */}
+                {schoolContextLabel && isOnline && (
+                  <div className="flex items-center gap-2 p-2.5 bg-emerald-50 rounded-xl border border-emerald-100">
+                    <Building2 className="w-4 h-4 text-emerald-600 flex-shrink-0" />
+                    <p className="text-xs text-emerald-700">{schoolContextLabel}</p>
+                  </div>
+                )}
+
                 {error && <div className="text-red-500 text-sm bg-red-50 p-3 rounded-xl">{error}</div>}
 
                 <button onClick={generateLesson} disabled={loading}
                   className="w-full py-3 bg-gradient-to-r from-blue-600 to-emerald-500 text-white rounded-xl font-semibold hover:shadow-lg hover:shadow-blue-200 transition-all disabled:opacity-50 flex items-center justify-center gap-2">
-                  {loading ? (
-                    <><Loader2 className="w-5 h-5 animate-spin" /> Generating...</>
-                  ) : (
-                    <><Sparkles className="w-5 h-5" /> Generate Lesson Note</>
-                  )}
+                  {loading
+                    ? <><Loader2 className="w-5 h-5 animate-spin" /> Generating...</>
+                    : <><Sparkles className="w-5 h-5" /> Generate Lesson Note</>
+                  }
                 </button>
               </div>
             </div>
@@ -369,15 +435,14 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
           <div className="lg:col-span-2">
             <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 min-h-[600px]">
               {/* Toolbar */}
-              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100">
+              <div className="flex items-center justify-between mb-6 pb-4 border-b border-gray-100 flex-wrap gap-3">
                 <h2 className="text-lg font-bold text-gray-900 flex items-center gap-2">
-                  <BookOpen className="w-5 h-5 text-blue-600" />
-                  Lesson Note Preview
+                  <BookOpen className="w-5 h-5 text-blue-600" /> Lesson Note Preview
                 </h2>
                 {lessonNote && (
                   <div className="flex items-center gap-2">
                     {teacherId && (
-                      <div className="flex flex-col items-end gap-1">
+                      <div className="flex flex-col items-end gap-0.5">
                         <button onClick={saveLesson} disabled={saving || saved}
                           className={`flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
                             saved ? 'bg-emerald-50 text-emerald-600' : 'bg-emerald-50 text-emerald-600 hover:bg-emerald-100'
@@ -390,7 +455,8 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                         )}
                       </div>
                     )}
-                    <button onClick={handlePrint} className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-all">
+                    <button onClick={handlePrint}
+                      className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-600 rounded-lg text-sm font-medium hover:bg-blue-100 transition-all">
                       <Printer className="w-4 h-4" /> Print / PDF
                     </button>
                     <button onClick={() => { setLessonNote(null); setFormData(p => ({ ...p, topic: '' })); setSaved(false); }}
@@ -409,7 +475,7 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                   </div>
                   <h3 className="text-lg font-semibold text-gray-900 mb-2">Generating Your Lesson Note</h3>
                   <p className="text-gray-500 text-sm text-center max-w-md">
-                    Our AI is creating a detailed, curriculum-aligned lesson note for {formData.country}'s {curriculum}. This may take 15-30 seconds...
+                    Our AI is creating a detailed, curriculum-aligned lesson note{schoolOrg ? ` aligned to ${schoolOrg.name}` : ''} for {formData.country}'s {curriculum}. This may take 15–30 seconds…
                   </p>
                   <div className="mt-6 w-64 h-2 bg-gray-100 rounded-full overflow-hidden">
                     <div className="h-full bg-gradient-to-r from-blue-500 to-emerald-500 rounded-full animate-pulse" style={{ width: '70%' }} />
@@ -428,19 +494,16 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
                   <p className="text-gray-500 text-sm max-w-md">
                     Fill in the lesson details on the left and click "Generate Lesson Note" to create a curriculum-aligned lesson note formatted for your country's education system.
                   </p>
+                  {schoolOrg && (
+                    <div className="mt-4 flex items-center gap-2 px-4 py-2.5 bg-emerald-50 rounded-xl border border-emerald-100">
+                      <Building2 className="w-4 h-4 text-emerald-600" />
+                      <span className="text-xs text-emerald-700">AI will align this lesson to <strong>{schoolOrg.name}</strong>'s curriculum</span>
+                    </div>
+                  )}
                   <div className="mt-6 grid grid-cols-3 gap-3 text-xs text-gray-400">
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="font-medium text-gray-600 mb-1">Step 1</div>
-                      Select country & class
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="font-medium text-gray-600 mb-1">Step 2</div>
-                      Choose subject & topic
-                    </div>
-                    <div className="bg-gray-50 rounded-lg p-3">
-                      <div className="font-medium text-gray-600 mb-1">Step 3</div>
-                      Generate & print
-                    </div>
+                    <div className="bg-gray-50 rounded-lg p-3"><div className="font-medium text-gray-600 mb-1">Step 1</div>Select country & class</div>
+                    <div className="bg-gray-50 rounded-lg p-3"><div className="font-medium text-gray-600 mb-1">Step 2</div>Choose subject & topic</div>
+                    <div className="bg-gray-50 rounded-lg p-3"><div className="font-medium text-gray-600 mb-1">Step 3</div>Generate & print</div>
                   </div>
                 </div>
               )}

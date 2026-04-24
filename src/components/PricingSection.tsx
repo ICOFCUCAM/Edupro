@@ -117,6 +117,117 @@ const PricingSection: React.FC<PricingSectionProps> = ({ onSelectPlan }) => {
           })}
         </div>
 
+        {/* ── Organization License Tiers ── */}
+        <div className="mt-20">
+          <div className="text-center mb-10">
+            <span className="inline-block px-4 py-1.5 bg-indigo-100 text-indigo-700 rounded-full text-sm font-semibold mb-3">For Schools, Districts & Ministries</span>
+            <h2 className="text-3xl font-bold text-gray-900">Organization Licenses</h2>
+            <p className="text-gray-500 mt-2 max-w-xl mx-auto">Deploy EduPro across your entire institution — one license, every teacher covered.</p>
+          </div>
+
+          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-5">
+            {[
+              {
+                id: 'school_basic',
+                name: 'School Basic',
+                seats: '20 teachers',
+                price: '$49',
+                period: '/month',
+                color: 'from-blue-500 to-blue-600',
+                badge: null,
+                features: ['20 teacher seats', 'School knowledge space', 'Lesson library sharing', 'Scheme of work upload', 'School analytics', 'Mobile money payment'],
+              },
+              {
+                id: 'school_pro',
+                name: 'School Pro',
+                seats: '100 teachers',
+                price: '$149',
+                period: '/month',
+                color: 'from-indigo-600 to-purple-600',
+                badge: 'POPULAR',
+                features: ['100 teacher seats', 'Everything in Basic', 'Teacher performance analytics', 'Priority AI generation', 'School AI memory loop', 'NGO voucher support'],
+              },
+              {
+                id: 'district',
+                name: 'District License',
+                seats: 'Unlimited schools',
+                price: 'Contact',
+                period: '',
+                color: 'from-purple-600 to-pink-600',
+                badge: null,
+                features: ['All schools in district', 'District analytics dashboard', 'Curriculum coverage heatmaps', 'School engagement metrics', 'Dedicated account manager', 'Custom onboarding'],
+              },
+              {
+                id: 'ministry',
+                name: 'Ministry License',
+                seats: 'National rollout',
+                price: 'Contact',
+                period: '',
+                color: 'from-gray-800 to-gray-900',
+                badge: null,
+                features: ['Entire country coverage', 'Ministry analytics dashboard', 'Curriculum monitoring', 'Policy alert system', 'Bulk school onboarding', 'Government billing terms'],
+              },
+            ].map((tier) => (
+              <div key={tier.id} className={`bg-white rounded-2xl shadow-xl border-2 transition-all hover:shadow-2xl relative ${
+                tier.badge ? 'border-indigo-500' : 'border-gray-100'
+              }`}>
+                {tier.badge && (
+                  <div className="absolute -top-3 left-1/2 -translate-x-1/2 px-3 py-0.5 bg-gradient-to-r from-indigo-600 to-purple-600 text-white text-xs font-bold rounded-full">
+                    {tier.badge}
+                  </div>
+                )}
+                <div className="p-5">
+                  <div className={`w-10 h-10 rounded-xl bg-gradient-to-br ${tier.color} flex items-center justify-center mb-3`}>
+                    <Building className="w-5 h-5 text-white" />
+                  </div>
+                  <h3 className="font-bold text-gray-900">{tier.name}</h3>
+                  <p className="text-xs text-gray-400 mb-3">{tier.seats}</p>
+                  <div className="mb-5">
+                    <span className="text-2xl font-bold text-gray-900">{tier.price}</span>
+                    {tier.period && <span className="text-gray-500 text-sm">{tier.period}</span>}
+                  </div>
+                  <div className="space-y-2 mb-5">
+                    {tier.features.map((f, fi) => (
+                      <div key={fi} className="flex items-start gap-2">
+                        <Check className="w-3.5 h-3.5 text-emerald-500 mt-0.5 flex-shrink-0" />
+                        <span className="text-xs text-gray-600">{f}</span>
+                      </div>
+                    ))}
+                  </div>
+                  <button onClick={() => onSelectPlan(tier.id)}
+                    className={`w-full py-2.5 rounded-xl font-semibold text-sm transition-all ${
+                      tier.badge
+                        ? 'bg-gradient-to-r from-indigo-600 to-purple-600 text-white hover:shadow-lg'
+                        : tier.price === 'Contact'
+                        ? 'bg-gray-900 text-white hover:bg-gray-800'
+                        : 'bg-indigo-50 text-indigo-700 hover:bg-indigo-100'
+                    }`}>
+                    {tier.price === 'Contact' ? 'Contact Sales' : 'Get Started'}
+                  </button>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Activation methods */}
+          <div className="mt-8 bg-gradient-to-r from-indigo-50 to-purple-50 rounded-2xl p-6 border border-indigo-100">
+            <h4 className="font-bold text-indigo-900 mb-3">Organization Activation Methods</h4>
+            <div className="grid sm:grid-cols-4 gap-4 text-sm">
+              {[
+                { label: 'Mobile Money', desc: 'MTN MoMo, M-Pesa, Airtel, Orange Money' },
+                { label: 'Bank Transfer', desc: 'Direct institutional bank payment' },
+                { label: 'NGO Voucher Code', desc: 'Grant-funded access for schools' },
+                { label: 'Ministry PO', desc: 'Purchase order for government procurement' },
+              ].map((m, i) => (
+                <div key={i} className="bg-white rounded-xl p-3 border border-indigo-100">
+                  <p className="font-semibold text-indigo-800 text-xs">{m.label}</p>
+                  <p className="text-gray-500 text-xs mt-0.5">{m.desc}</p>
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
         {/* Payment Methods */}
         <div className="mt-16 text-center pb-12">
           <h3 className="text-lg font-bold text-gray-900 mb-4">Accepted Payment Methods</h3>
