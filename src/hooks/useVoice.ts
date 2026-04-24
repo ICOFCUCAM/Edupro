@@ -18,6 +18,7 @@ export interface VoiceEntities {
   question_count?:   string;
   target_language?:  string;
   textbook_query?:   string;
+  target_country?:   string;
 }
 
 export interface VoiceResult {
@@ -384,6 +385,82 @@ export function useVoice(options: UseVoiceOptions) {
             finalResponse = `I could not find a chapter covering "${tbQuery}" in your textbooks. Try uploading your textbook in the Textbook Library.`;
           }
           actionTaken = 'textbook_searched';
+          break;
+        }
+
+        // ── Localize lesson to another country's curriculum ──────────────
+        case 'localize_lesson': {
+          const destCountry = entities.target_country;
+          if (!destCountry) {
+            finalResponse = 'Which country would you like to localize this lesson for? Try saying "Localize for Ghana" or "Convert to Kenya curriculum".';
+            actionTaken   = 'localize_info';
+            break;
+          }
+          if (!teacherId) {
+            finalResponse = 'Please sign in to localize lessons.';
+            actionTaken   = 'localize_info';
+            break;
+          }
+          speak(`Localizing your lesson for ${destCountry} curriculum, one moment…`);
+          const { data: latestForLocalize } = await supabase
+            .from('lesson_notes')
+            .select('id, title')
+            .eq('teacher_id', teacherId)
+            .order('created_at', { ascending: false })
+            .limit(1)
+            .single();
+
+          if (!latestForLocalize?.id) {
+            finalResponse = 'No lesson found to localize. Please create a lesson first.';
+            actionTaken   = 'localize_info';
+            break;
+          }
+          const localizeRes = await supabase.functions.invoke('lesson-localize', {
+            body: { lessonNoteId: latestForLocalize.id, targetCountry: destCountry, teacherId },
+          });
+          if (localizeRes.data?.success) {
+            const ld = localizeRes.data;
+            generatedTitle = ld.title ?? `${latestForLocalize.title} (${destCountry})`;
+            finalResponse  = `Done! Your lesson has been localized for ${destCountry} as "${generatedTitle}". ${ld.localization_notes ? ld.localization_notes.slice(0, 120) : ''} Find it in your Lesson Library.`;
+            actionTaken    = 'lesson_localized';
+          } else {
+            finalResponse = `Could not localize the lesson for ${destCountry}. Please try the Curriculum Crosswalk section to do this manually.`;
+            actionTaken   = 'localize_error';
+          }
+          break;
+        }
+
+        // ── Compare curriculum similarity ─────────────────────────────────
+        case 'compare_curriculum': {
+          const countryA = entities.country   || teacherCountry;
+          const countryB = entities.target_country;
+          if (!countryB) {
+            finalResponse = 'Which two countries would you like to compare? Try "Compare Nigeria and Ghana curriculum".';
+            actionTaken   = 'compare_info';
+            break;
+          }
+          speak(`Checking curriculum similarity between ${countryA} and ${countryB}…`);
+          // Try cached similarity index first
+          const { data: simRows } = await supabase
+            .from('curriculum_similarity_index')
+            .select('similarity_score, matched_objectives, total_source_objectives, subject')
+            .eq('country_a', countryA)
+            .eq('country_b', countryB)
+            .eq('subject', entities.subject || '')
+            .limit(1);
+
+          if (simRows && simRows.length > 0) {
+            const s = simRows[0];
+            const subjectLabel = s.subject || 'overall';
+            finalResponse = `${countryA} and ${countryB} share ${s.similarity_score?.toFixed(0) ?? '?'}% curriculum similarity for ${subjectLabel}. ${s.matched_objectives ?? '?'} of ${s.total_source_objectives ?? '?'} objectives are matched. Open the Curriculum Crosswalk for the full breakdown.`;
+          } else {
+            // Trigger a crosswalk generation in background and give a helpful response
+            supabase.functions.invoke('curriculum-crosswalk-generate', {
+              body: { sourceCountry: countryA, targetCountry: countryB, subject: entities.subject ?? null },
+            }).catch(() => {});
+            finalResponse = `I'm computing the crosswalk between ${countryA} and ${countryB} for the first time. Check the Curriculum Crosswalk section in a minute for the full similarity report.`;
+          }
+          actionTaken = 'curriculum_compared';
           break;
         }
 

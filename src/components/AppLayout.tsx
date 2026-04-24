@@ -18,6 +18,7 @@ import OrganizationHub from './OrganizationHub';
 import AssessmentGenerator from './AssessmentGenerator';
 import VoiceAssistant from './VoiceAssistant';
 import TextbookLibrary from './TextbookLibrary';
+import CurriculumCrosswalk from './CurriculumCrosswalk';
 
 // Pages that require authentication
 const PROTECTED_PAGES: Record<string, string> = {
@@ -31,7 +32,8 @@ const PROTECTED_PAGES: Record<string, string> = {
   'organizations': 'Organization Hub',
   'assessments': 'Assessment Generator',
   'my-assessments': 'My Assessments',
-  'textbook-library': 'Textbook Library',
+  'textbook-library':   'Textbook Library',
+  'curriculum-crosswalk': 'Curriculum Crosswalk',
 };
 
 const AppLayout: React.FC = () => {
@@ -215,6 +217,16 @@ const AppLayout: React.FC = () => {
               teacherId={profile?.id ?? user?.id ?? ''}
               country={profile?.country ?? 'Nigeria'}
               onNavigate={handleNavigate}
+            />
+          </div>
+        );
+
+      case 'curriculum-crosswalk':
+        return (
+          <div className="max-w-4xl mx-auto px-4 py-8">
+            <CurriculumCrosswalk
+              teacherId={profile?.id ?? user?.id ?? ''}
+              userCountry={profile?.country ?? 'Nigeria'}
             />
           </div>
         );

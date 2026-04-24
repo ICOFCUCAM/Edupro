@@ -3,7 +3,7 @@ import { supabase } from '@/lib/supabase';
 import {
   Globe2, Building2, Users, FileText, TrendingUp, Bell, BarChart3,
   Loader2, ChevronRight, AlertTriangle, BookOpen, Flame, Target,
-  ClipboardList, Search, Filter, Eye, Printer,
+  ClipboardList, Search, Filter, Eye, Printer, Globe,
 } from 'lucide-react';
 import { getChildOrganizations, getOrganizationStats, Organization } from '@/services/organizationService';
 import { getCountryAlignmentStats } from '@/services/alignmentService';
@@ -11,6 +11,7 @@ import { getMinistryQuestionBank, type MinistryQuestionBankItem } from '@/servic
 import { getNationalPerformance } from '@/services/performanceService';
 import { compareTextbooksForMinistry, type MinistryComparisonRow } from '@/services/textbookService';
 import TextbookLibrary from '@/components/TextbookLibrary';
+import CurriculumCrosswalk from '@/components/CurriculumCrosswalk';
 import { BookMarked } from 'lucide-react';
 import { SUBJECTS } from '@/lib/constants';
 import {
@@ -33,7 +34,7 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     avg_score: number; total_lessons: number; full: number; partial: number; needs_improvement: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank' | 'national-mastery' | 'textbook-eval'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank' | 'national-mastery' | 'textbook-eval' | 'regional-analysis'>('overview');
   const [tbComparison, setTbComparison]   = useState<MinistryComparisonRow[]>([]);
   const [tbCompLoading, setTbCompLoading] = useState(false);
 
@@ -169,7 +170,8 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     { id: 'districts'        as const, label: 'Districts',        icon: Building2 },
     { id: 'national-mastery' as const, label: 'National Mastery', icon: Target },
     { id: 'question-bank'    as const, label: 'Question Bank',    icon: ClipboardList },
-    { id: 'textbook-eval'    as const, label: 'Textbook Evaluation', icon: BookMarked },
+    { id: 'textbook-eval'     as const, label: 'Textbook Evaluation', icon: BookMarked },
+    { id: 'regional-analysis' as const, label: 'Regional Analysis',   icon: Globe },
     { id: 'alerts'           as const, label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}`, icon: Bell },
   ];
 
@@ -751,6 +753,16 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
               country={organization.country ?? ''}
             />
           </div>
+        </div>
+      )}
+
+      {/* ── Regional Analysis (Curriculum Crosswalk) ── */}
+      {activeTab === 'regional-analysis' && (
+        <div className="bg-white rounded-2xl border border-gray-100 p-6">
+          <CurriculumCrosswalk
+            teacherId={''}
+            userCountry={organization.country ?? 'Nigeria'}
+          />
         </div>
       )}
     </div>
