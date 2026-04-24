@@ -338,6 +338,16 @@ export async function refreshDistrictPerformance(districtId: string): Promise<vo
   }
 }
 
+// Query by teacher_id (used by coaching assistant)
+export async function getTeacherCoachingData(teacherId: string): Promise<ClassPerformanceSummary[]> {
+  const { data } = await supabase
+    .from('class_performance_summary')
+    .select('*')
+    .eq('teacher_id', teacherId)
+    .order('average_score', { ascending: true });
+  return (data || []) as ClassPerformanceSummary[];
+}
+
 export async function getNationalPerformance(
   country: string
 ): Promise<{ subject: string; average_score: number; district_count: number; student_count: number }[]> {

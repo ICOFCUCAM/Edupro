@@ -1,11 +1,16 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { REGIONS } from '@/lib/constants';
-import { Brain, Search, Plus, ChevronRight, Globe2, BookOpen, Zap, AlertCircle, CheckCircle2, Clock, RefreshCw, Bot, Target, ClipboardList, Loader2 } from 'lucide-react';
+import {
+  Brain, Search, Plus, ChevronRight, Globe2, BookOpen, Zap, AlertCircle, CheckCircle2,
+  Clock, RefreshCw, Bot, Target, ClipboardList, Loader2, MessageCircle, Send, AlertTriangle,
+} from 'lucide-react';
 import { rescoreLessonsForCountry } from '@/services/alignmentService';
 import {
   autoGenerateForObjective, regenerateAssessmentsForCurriculumChange,
   getObjectivesForScope,
 } from '@/services/assessmentService';
+import { getTeacherCoachingData, type ClassPerformanceSummary } from '@/services/performanceService';
+import { supabase } from '@/lib/supabase';
 
 const KB_ENTRIES = [
   { id: 1, country: 'Nigeria', category: 'Curriculum Update', title: 'NERDC 2025 Revised Primary Curriculum', content: 'The Nigerian Educational Research and Development Council has updated the primary school curriculum to include digital literacy as a core subject from Primary 3. All lesson notes should now incorporate ICT integration objectives.', date: '2025-12-15', status: 'active', impact: 'high' },
@@ -23,9 +28,18 @@ const KB_ENTRIES = [
 interface KnowledgeBaseProps {
   teacherCountry?: string;
   teacherId?: string;
+  teacherName?: string;
 }
 
-const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry, teacherId }) => {
+const QUICK_QUESTIONS = [
+  'Which objectives are weak in my class?',
+  'Which class needs the most attention?',
+  'What interventions do you recommend?',
+  'Which topics are my students struggling with?',
+  'What are my students doing well?',
+];
+
+const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry, teacherId, teacherName }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [countryFilter, setCountryFilter] = useState(teacherCountry && teacherCountry !== 'all' ? teacherCountry : 'all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -39,6 +53,49 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry, teacherId
   const [objectives, setObjectives] = useState<Array<{ id: string; learning_objective: string; topic: string; subject: string; class_level: string; country: string }>>([]);
   const [objectivesLoading, setObjectivesLoading] = useState(false);
   const [objectivesCountry, setObjectivesCountry] = useState<string | null>(null);
+
+  // Coaching assistant state
+  const [coachingData, setCoachingData] = useState<ClassPerformanceSummary[]>([]);
+  const [coachingLoaded, setCoachingLoaded] = useState(false);
+  const [coachQuestion, setCoachQuestion] = useState('');
+  const [coachAnswer, setCoachAnswer] = useState('');
+  const [coachAsking, setCoachAsking] = useState(false);
+  const [showCoach, setShowCoach] = useState(false);
+
+  useEffect(() => {
+    if (teacherId && !coachingLoaded) {
+      getTeacherCoachingData(teacherId)
+        .then((data) => { setCoachingData(data); setCoachingLoaded(true); })
+        .catch(() => setCoachingLoaded(true));
+    }
+  }, [teacherId]);
+
+  const handleAskCoach = async (question?: string) => {
+    const q = question ?? coachQuestion;
+    if (!q.trim()) return;
+    setCoachAsking(true);
+    setCoachAnswer('');
+    if (question) setCoachQuestion(question);
+    try {
+      const { data, error } = await supabase.functions.invoke('teacher-coaching', {
+        body: {
+          question: q,
+          performanceData: coachingData,
+          country: teacherCountry,
+          teacherName,
+        },
+      });
+      if (error || !data?.success) {
+        setCoachAnswer(data?.error || 'Could not get a response. Please try again.');
+      } else {
+        setCoachAnswer(data.answer);
+      }
+    } catch {
+      setCoachAnswer('Could not connect to coaching assistant. Please try again.');
+    } finally {
+      setCoachAsking(false);
+    }
+  };
 
   const allCountries = [...new Set(KB_ENTRIES.map(e => e.country))];
   const allCategories = [...new Set(KB_ENTRIES.map(e => e.category))];
@@ -164,6 +221,111 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry, teacherId
       </div>
 
       <div className="max-w-7xl mx-auto px-4 -mt-6">
+
+        {/* Teacher Coaching Assistant */}
+        {teacherId && (
+          <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-6">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-sm font-semibold text-gray-700 flex items-center gap-2">
+                <MessageCircle className="w-4 h-4 text-purple-600" /> Teacher Coaching Assistant
+              </h3>
+              <button
+                onClick={() => setShowCoach(!showCoach)}
+                className="text-xs text-purple-600 hover:underline"
+              >
+                {showCoach ? 'Collapse' : 'Expand'}
+              </button>
+            </div>
+
+            {/* Always-visible: weak objectives summary */}
+            {coachingLoaded && coachingData.length > 0 && (
+              <div className="mb-4">
+                <p className="text-xs font-medium text-gray-500 mb-2">Your class performance snapshot:</p>
+                <div className="flex flex-wrap gap-2">
+                  {coachingData.slice(0, 4).map((c) => (
+                    <div key={c.id} className={`px-3 py-2 rounded-xl text-xs border ${
+                      c.intervention_needed
+                        ? 'bg-red-50 border-red-200 text-red-700'
+                        : c.average_score < 65
+                        ? 'bg-amber-50 border-amber-200 text-amber-700'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    }`}>
+                      <span className="font-semibold">{c.subject} · {c.class_level}</span>
+                      <span className="ml-1.5">{c.average_score.toFixed(0)}%</span>
+                      {c.intervention_needed && <AlertTriangle className="w-3 h-3 inline ml-1" />}
+                    </div>
+                  ))}
+                  {coachingData.some(c => c.weak_objectives.length > 0) && (
+                    <div className="px-3 py-2 rounded-xl text-xs bg-purple-50 border border-purple-200 text-purple-700">
+                      {coachingData.reduce((n, c) => n + c.weak_objectives.length, 0)} weak objectives detected
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {coachingLoaded && coachingData.length === 0 && (
+              <p className="text-xs text-gray-400 mb-4">No performance data yet. Enter student assessment results to unlock coaching insights.</p>
+            )}
+
+            {/* Quick question chips */}
+            <div className="flex flex-wrap gap-2 mb-3">
+              {QUICK_QUESTIONS.map((q) => (
+                <button
+                  key={q}
+                  onClick={() => { setShowCoach(true); handleAskCoach(q); }}
+                  disabled={coachAsking}
+                  className="px-3 py-1.5 bg-purple-50 text-purple-700 text-xs rounded-lg border border-purple-200 hover:bg-purple-100 transition-colors disabled:opacity-40"
+                >
+                  {q}
+                </button>
+              ))}
+            </div>
+
+            {/* Free-form input */}
+            {showCoach && (
+              <div className="space-y-3">
+                <div className="flex gap-2">
+                  <input
+                    value={coachQuestion}
+                    onChange={(e) => setCoachQuestion(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === 'Enter' && !coachAsking) handleAskCoach(); }}
+                    placeholder="Ask your coaching assistant anything..."
+                    className="flex-1 border border-gray-200 rounded-xl px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-purple-400"
+                  />
+                  <button
+                    onClick={() => handleAskCoach()}
+                    disabled={coachAsking || !coachQuestion.trim()}
+                    className="flex items-center gap-1.5 px-4 py-2.5 bg-purple-600 text-white text-sm rounded-xl hover:bg-purple-700 disabled:opacity-40 transition-colors"
+                  >
+                    {coachAsking ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                  </button>
+                </div>
+
+                {coachAsking && (
+                  <div className="flex items-center gap-2 text-sm text-gray-400 py-2">
+                    <Loader2 className="w-4 h-4 animate-spin" /> Analysing your class data…
+                  </div>
+                )}
+
+                {coachAnswer && !coachAsking && (
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4">
+                    <div className="flex items-start gap-3">
+                      <div className="w-7 h-7 bg-purple-600 rounded-lg flex items-center justify-center flex-shrink-0">
+                        <Brain className="w-4 h-4 text-white" />
+                      </div>
+                      <div>
+                        <p className="text-xs font-semibold text-purple-700 mb-1">Coaching Assistant</p>
+                        <p className="text-sm text-gray-700 leading-relaxed whitespace-pre-wrap">{coachAnswer}</p>
+                      </div>
+                    </div>
+                  </div>
+                )}
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Country Bots */}
         <div className="bg-white rounded-2xl shadow-xl border border-gray-100 p-6 mb-6">
           <h3 className="text-sm font-semibold text-gray-700 mb-3 flex items-center gap-2">

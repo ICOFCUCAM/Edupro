@@ -255,12 +255,13 @@ interface AssessmentGeneratorProps {
   prefillSubject?: string;
   prefillClassLevel?: string;
   mode?: 'teacher' | 'school_exam_builder';
+  onNavigate?: (page: string) => void;
 }
 
 const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({
   teacherId, organizationId, teacherCountry,
   prefillTopic, prefillSubject, prefillClassLevel,
-  mode = 'teacher',
+  mode = 'teacher', onNavigate,
 }) => {
   // ── Form state ─────────────────────────────────────────
   const defaultCountry = teacherCountry ?? 'Nigeria';
@@ -283,6 +284,7 @@ const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [successMsg, setSuccessMsg] = useState<string | null>(null);
+  const [savedPackageId, setSavedPackageId] = useState<string | null>(null);
 
   // ── Generated content ──────────────────────────────────
   const [generated, setGenerated] = useState<{
@@ -380,6 +382,7 @@ const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({
       } catch { /* non-blocking */ }
 
       setSuccessMsg('Assessment saved successfully!');
+      setSavedPackageId(packageId);
       if (historyLoaded) await loadHistory();
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Save failed.');
@@ -678,9 +681,19 @@ const AssessmentGenerator: React.FC<AssessmentGeneratorProps> = ({
                 </div>
               )}
               {successMsg && (
-                <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl flex items-start gap-2">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
-                  <p className="text-xs text-emerald-700">{successMsg}</p>
+                <div className="mt-3 p-3 bg-emerald-50 border border-emerald-200 rounded-xl">
+                  <div className="flex items-start gap-2 mb-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-500 flex-shrink-0 mt-0.5" />
+                    <p className="text-xs text-emerald-700">{successMsg}</p>
+                  </div>
+                  {savedPackageId && onNavigate && (
+                    <button
+                      onClick={() => onNavigate('organizations')}
+                      className="w-full flex items-center justify-center gap-1.5 px-3 py-2 bg-emerald-600 text-white text-xs rounded-lg hover:bg-emerald-700 transition-colors font-medium"
+                    >
+                      <Users className="w-3.5 h-3.5" /> Enter Student Results
+                    </button>
+                  )}
                 </div>
               )}
             </div>

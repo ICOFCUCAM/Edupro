@@ -184,7 +184,13 @@ const AppLayout: React.FC = () => {
         return <ExamBank />;
 
       case 'knowledge-base':
-        return <KnowledgeBase teacherCountry={profile?.country} teacherId={profile?.id} />;
+        return (
+          <KnowledgeBase
+            teacherCountry={profile?.country}
+            teacherId={profile?.id}
+            teacherName={profile?.full_name}
+          />
+        );
 
       case 'website-builder':
         return <WebsiteBuilder />;
@@ -194,6 +200,7 @@ const AppLayout: React.FC = () => {
           <AssessmentGenerator
             teacherId={profile?.id}
             teacherCountry={profile?.country}
+            onNavigate={handleNavigate}
           />
         );
 

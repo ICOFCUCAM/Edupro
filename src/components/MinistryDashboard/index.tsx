@@ -356,23 +356,86 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
 
           {!nationalPerfLoading && nationalPerf.length > 0 && (
             <>
-              {/* National average chart */}
+              {/* Mastery heatmap — subject × mastery band */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-                <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
-                  <BarChart3 className="w-5 h-5 text-blue-600" /> National Subject Performance
+                <h3 className="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                  <Target className="w-5 h-5 text-blue-600" /> Nationwide Mastery Heatmap
                 </h3>
-                <ResponsiveContainer width="100%" height={240}>
-                  <BarChart data={nationalPerf} layout="vertical">
-                    <CartesianGrid strokeDasharray="3 3" horizontal={false} />
-                    <XAxis type="number" domain={[0, 100]} tick={{ fontSize: 11 }} />
-                    <YAxis dataKey="subject" type="category" tick={{ fontSize: 10 }} width={120} />
-                    <Tooltip formatter={(v: number) => `${v.toFixed(1)}%`} />
-                    <Bar dataKey="average_score" fill="#3b82f6" radius={[0, 4, 4, 0]} />
-                  </BarChart>
-                </ResponsiveContainer>
+                <p className="text-xs text-gray-400 mb-4">Subject performance index (0–100). Color indicates curriculum delivery health.</p>
+                <div className="space-y-2">
+                  {nationalPerf.map((p) => {
+                    const pct = Math.min(100, Math.max(0, p.average_score));
+                    const color = pct >= 75 ? '#22c55e' : pct >= 65 ? '#3b82f6' : pct >= 50 ? '#f97316' : '#ef4444';
+                    const bgLight = pct >= 75 ? 'bg-emerald-50' : pct >= 65 ? 'bg-blue-50' : pct >= 50 ? 'bg-orange-50' : 'bg-red-50';
+                    return (
+                      <div key={p.subject} className={`${bgLight} rounded-xl p-3`}>
+                        <div className="flex items-center justify-between mb-1.5">
+                          <span className="text-sm font-medium text-gray-900">{p.subject}</span>
+                          <span className="text-xs font-bold" style={{ color }}>{pct.toFixed(1)}%</span>
+                        </div>
+                        {/* Progress bar acting as heatmap cell */}
+                        <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
+                          <div className="h-full rounded-full transition-all" style={{ width: `${pct}%`, backgroundColor: color }} />
+                        </div>
+                        <div className="flex justify-between mt-1 text-[10px] text-gray-400">
+                          <span>{p.district_count} districts</span>
+                          <span>{p.student_count.toLocaleString()} students</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                {/* Legend */}
+                <div className="flex gap-4 mt-4 text-xs flex-wrap">
+                  {[['#22c55e','Mastered (≥75%)'],['#3b82f6','Proficient (65–74%)'],['#f97316','Developing (50–64%)'],['#ef4444','Critical (<50%)']].map(([c, l]) => (
+                    <div key={l} className="flex items-center gap-1.5">
+                      <div className="w-3 h-3 rounded-sm" style={{ backgroundColor: c }} />
+                      <span className="text-gray-500">{l}</span>
+                    </div>
+                  ))}
+                </div>
               </div>
 
-              {/* Effectiveness signals */}
+              {/* Subject difficulty clusters */}
+              <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+                <h3 className="font-bold text-gray-900 mb-1 flex items-center gap-2">
+                  <BarChart3 className="w-5 h-5 text-indigo-600" /> Subject Difficulty Clusters
+                </h3>
+                <p className="text-xs text-gray-400 mb-4">Subjects grouped by national average performance — guides curriculum investment priorities.</p>
+                {(() => {
+                  const easy = nationalPerf.filter(p => p.average_score >= 70);
+                  const medium = nationalPerf.filter(p => p.average_score >= 50 && p.average_score < 70);
+                  const hard = nationalPerf.filter(p => p.average_score < 50);
+                  return (
+                    <div className="grid sm:grid-cols-3 gap-4">
+                      {[
+                        { label: 'Low Difficulty', items: easy, color: 'emerald', desc: '≥ 70% national avg' },
+                        { label: 'Medium Difficulty', items: medium, color: 'amber', desc: '50–69% national avg' },
+                        { label: 'High Difficulty', items: hard, color: 'red', desc: '< 50% national avg' },
+                      ].map(({ label, items, color, desc }) => (
+                        <div key={label} className={`bg-${color}-50 border border-${color}-200 rounded-xl p-4`}>
+                          <p className={`text-sm font-semibold text-${color}-800 mb-0.5`}>{label}</p>
+                          <p className={`text-xs text-${color}-600 mb-3`}>{desc}</p>
+                          {items.length === 0 ? (
+                            <p className={`text-xs text-${color}-400`}>None</p>
+                          ) : (
+                            <ul className="space-y-1">
+                              {items.map(p => (
+                                <li key={p.subject} className={`text-xs text-${color}-700 flex items-center justify-between`}>
+                                  <span>{p.subject}</span>
+                                  <span className="font-semibold">{p.average_score.toFixed(0)}%</span>
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  );
+                })()}
+              </div>
+
+              {/* Curriculum effectiveness signals */}
               <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
                 <h3 className="font-bold text-gray-900 mb-4 flex items-center gap-2">
                   <AlertTriangle className="w-5 h-5 text-amber-500" /> Curriculum Effectiveness Signals
@@ -403,7 +466,7 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
                   <div className="mt-4 p-4 bg-red-50 border border-red-200 rounded-xl">
                     <p className="text-sm font-semibold text-red-800">Policy Action Required</p>
                     <p className="text-xs text-red-700 mt-1">
-                      {nationalPerf.filter(p => p.average_score < 50).map(p => p.subject).join(', ')} {nationalPerf.filter(p => p.average_score < 50).length === 1 ? 'is' : 'are'} below 50% nationally. Consider curriculum review, teacher training programs, or targeted interventions.
+                      {nationalPerf.filter(p => p.average_score < 50).map(p => p.subject).join(', ')} {nationalPerf.filter(p => p.average_score < 50).length === 1 ? 'is' : 'are'} below 50% nationally. Consider curriculum review, teacher training programmes, or targeted interventions.
                     </p>
                   </div>
                 )}
