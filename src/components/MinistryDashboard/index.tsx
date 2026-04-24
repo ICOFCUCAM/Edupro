@@ -2,10 +2,13 @@ import React, { useState, useEffect } from 'react';
 import { supabase } from '@/lib/supabase';
 import {
   Globe2, Building2, Users, FileText, TrendingUp, Bell, BarChart3,
-  Loader2, ChevronRight, AlertTriangle, BookOpen, Flame, Target
+  Loader2, ChevronRight, AlertTriangle, BookOpen, Flame, Target,
+  ClipboardList, Search, Filter, Eye, Printer,
 } from 'lucide-react';
 import { getChildOrganizations, getOrganizationStats, Organization } from '@/services/organizationService';
 import { getCountryAlignmentStats } from '@/services/alignmentService';
+import { getMinistryQuestionBank, type MinistryQuestionBankItem } from '@/services/assessmentService';
+import { SUBJECTS } from '@/lib/constants';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
   LineChart, Line, CartesianGrid, Legend
@@ -26,7 +29,16 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     avg_score: number; total_lessons: number; full: number; partial: number; needs_improvement: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank'>('overview');
+
+  // Question bank state
+  const [qbItems, setQbItems]               = useState<MinistryQuestionBankItem[]>([]);
+  const [qbLoading, setQbLoading]           = useState(false);
+  const [qbSubject, setQbSubject]           = useState('');
+  const [qbLevel, setQbLevel]               = useState('');
+  const [qbType, setQbType]                 = useState('');
+  const [qbSearch, setQbSearch]             = useState('');
+  const [qbSelected, setQbSelected]         = useState<MinistryQuestionBankItem | null>(null);
 
   useEffect(() => {
     loadData();
@@ -116,10 +128,27 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     setLoading(false);
   };
 
+  const loadQuestionBank = async () => {
+    setQbLoading(true);
+    try {
+      const items = await getMinistryQuestionBank(
+        organization.country,
+        qbSubject || undefined,
+        qbLevel   || undefined,
+        qbType    || undefined,
+        200,
+      );
+      setQbItems(items);
+    } catch { /* silent */ } finally {
+      setQbLoading(false);
+    }
+  };
+
   const tabs = [
-    { id: 'overview' as const, label: 'Overview', icon: BarChart3 },
-    { id: 'districts' as const, label: 'Districts', icon: Building2 },
-    { id: 'alerts' as const, label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}`, icon: Bell },
+    { id: 'overview'       as const, label: 'Overview',      icon: BarChart3 },
+    { id: 'districts'      as const, label: 'Districts',     icon: Building2 },
+    { id: 'question-bank'  as const, label: 'Question Bank', icon: ClipboardList },
+    { id: 'alerts'         as const, label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}`, icon: Bell },
   ];
 
   if (loading) {
@@ -162,7 +191,10 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
       {/* Tabs */}
       <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-1.5 flex gap-1 overflow-x-auto">
         {tabs.map(tab => (
-          <button key={tab.id} onClick={() => setActiveTab(tab.id)}
+          <button key={tab.id} onClick={() => {
+            setActiveTab(tab.id);
+            if (tab.id === 'question-bank' && qbItems.length === 0) loadQuestionBank();
+          }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'
             }`}>
@@ -279,6 +311,161 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
                   </div>
                 </button>
               ))}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Question Bank */}
+      {activeTab === 'question-bank' && (
+        <div className="space-y-4">
+          {/* Filters */}
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-4">
+            <div className="flex flex-wrap gap-3 items-end">
+              <div className="flex-1 min-w-[160px]">
+                <label className="block text-xs font-medium text-gray-500 mb-1">Search topic</label>
+                <div className="relative">
+                  <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400" />
+                  <input
+                    type="text"
+                    value={qbSearch}
+                    onChange={e => setQbSearch(e.target.value)}
+                    placeholder="Search…"
+                    className="w-full pl-8 pr-3 py-2 text-sm border border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Subject</label>
+                <select value={qbSubject} onChange={e => setQbSubject(e.target.value)}
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                  <option value="">All subjects</option>
+                  {SUBJECTS.slice(0, 10).map(s => <option key={s} value={s}>{s}</option>)}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-medium text-gray-500 mb-1">Type</label>
+                <select value={qbType} onChange={e => setQbType(e.target.value)}
+                  className="border border-gray-200 rounded-xl px-3 py-2 text-sm focus:ring-2 focus:ring-blue-500">
+                  <option value="">All types</option>
+                  {['class_exercise','homework','quiz','test','exam','competency_check'].map(t => (
+                    <option key={t} value={t} className="capitalize">{t.replace('_', ' ')}</option>
+                  ))}
+                </select>
+              </div>
+              <button onClick={loadQuestionBank}
+                className="flex items-center gap-1.5 px-4 py-2 bg-blue-50 text-blue-700 rounded-xl text-sm font-medium hover:bg-blue-100 transition-all">
+                <Filter className="w-3.5 h-3.5" /> Apply
+              </button>
+            </div>
+          </div>
+
+          {qbSelected ? (
+            /* Detail view */
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h3 className="font-bold text-gray-900">{qbSelected.title ?? qbSelected.topic}</h3>
+                  <p className="text-xs text-gray-500 mt-0.5">
+                    {qbSelected.subject} · {qbSelected.class_level} · {qbSelected.difficulty} · {qbSelected.question_count} Qs · {qbSelected.total_marks} marks
+                    {qbSelected.school_name && <> · {qbSelected.school_name}</>}
+                  </p>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => window.print()}
+                    className="flex items-center gap-1 px-3 py-1.5 bg-gray-50 border border-gray-200 rounded-xl text-xs font-medium text-gray-600 hover:bg-gray-100">
+                    <Printer className="w-3.5 h-3.5" /> Print
+                  </button>
+                  <button onClick={() => setQbSelected(null)}
+                    className="px-3 py-1.5 bg-blue-50 text-blue-700 rounded-xl text-xs font-medium hover:bg-blue-100">
+                    ← Back
+                  </button>
+                </div>
+              </div>
+              <div className="p-3 bg-blue-50 border border-blue-200 rounded-xl mb-4 text-sm text-blue-800">
+                <strong>Instructions:</strong> {qbSelected.content?.instructions}
+                <span className="ml-3 text-xs text-blue-600">⏱ {qbSelected.duration_minutes} min</span>
+              </div>
+              {qbSelected.content?.sections?.map((section: any, i: number) => (
+                <div key={i} className="mb-5">
+                  <h4 className="text-sm font-semibold text-gray-800 mb-2 flex items-center gap-2">
+                    {section.title}
+                    {section.instructions && <span className="text-xs text-gray-400 font-normal italic">— {section.instructions}</span>}
+                  </h4>
+                  <div className="space-y-2">
+                    {section.questions?.map((q: any) => (
+                      <div key={q.number} className="flex items-start gap-2.5 p-3 bg-gray-50 rounded-xl">
+                        <span className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 text-xs font-bold flex items-center justify-center flex-shrink-0">{q.number}</span>
+                        <div className="flex-1">
+                          <p className="text-sm text-gray-800">{q.text}</p>
+                          {q.options && (
+                            <div className="mt-1.5 grid grid-cols-2 gap-1">
+                              {Object.entries(q.options).map(([k, v]) => (
+                                <span key={k} className="text-xs text-gray-600 px-2 py-0.5 bg-white border border-gray-200 rounded">{k}. {v as string}</span>
+                              ))}
+                            </div>
+                          )}
+                          <span className="text-xs text-gray-400 mt-1 inline-block">{q.marks} mark{q.marks !== 1 ? 's' : ''}</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            /* List view */
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100">
+              {qbLoading ? (
+                <div className="flex items-center justify-center py-16 text-gray-400">
+                  <Loader2 className="w-6 h-6 animate-spin mr-2" /> Loading question bank…
+                </div>
+              ) : (() => {
+                const filtered = qbItems.filter(item =>
+                  !qbSearch || item.topic?.toLowerCase().includes(qbSearch.toLowerCase()) ||
+                  item.title?.toLowerCase().includes(qbSearch.toLowerCase())
+                );
+                return filtered.length === 0 ? (
+                  <div className="text-center py-16 text-gray-400">
+                    <ClipboardList className="w-10 h-10 mx-auto mb-2 opacity-30" />
+                    <p className="text-sm">No assessments in the question bank yet.</p>
+                    <p className="text-xs mt-1">Assessments auto-generated by teachers appear here.</p>
+                  </div>
+                ) : (
+                  <div className="divide-y divide-gray-100">
+                    <div className="px-5 py-3 bg-gray-50 rounded-t-2xl flex items-center justify-between">
+                      <p className="text-xs font-semibold text-gray-600">{filtered.length} assessments — {organization.country}</p>
+                      <div className="flex gap-3 text-xs text-gray-400">
+                        <span>Auto: {filtered.filter(i => i.auto_generated).length}</span>
+                        <span>Manual: {filtered.filter(i => !i.auto_generated).length}</span>
+                      </div>
+                    </div>
+                    {filtered.map(item => (
+                      <button key={item.id} onClick={() => setQbSelected(item)}
+                        className="w-full flex items-center gap-3 px-5 py-3.5 hover:bg-gray-50 transition-all text-left">
+                        <div className="w-9 h-9 rounded-xl bg-indigo-50 flex items-center justify-center flex-shrink-0">
+                          <ClipboardList className="w-4.5 h-4.5 text-indigo-600" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-sm font-medium text-gray-900 truncate">{item.title ?? item.topic}</p>
+                          <p className="text-xs text-gray-500">
+                            {item.subject} · {item.class_level} · {item.difficulty} ·{' '}
+                            <span className="capitalize">{item.package_type?.replace('_', ' ')}</span>
+                            {item.school_name && <> · {item.school_name}</>}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-2 flex-shrink-0">
+                          {item.auto_generated && (
+                            <span className="text-[10px] px-1.5 py-0.5 bg-violet-100 text-violet-700 rounded-full font-medium">Auto</span>
+                          )}
+                          <span className="text-xs text-gray-400">{item.question_count} Qs</span>
+                          <Eye className="w-4 h-4 text-gray-300" />
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
         </div>

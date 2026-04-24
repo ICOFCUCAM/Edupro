@@ -1,7 +1,11 @@
 import React, { useState } from 'react';
 import { REGIONS } from '@/lib/constants';
-import { Brain, Search, Plus, ChevronRight, Globe2, BookOpen, Zap, AlertCircle, CheckCircle2, Clock, RefreshCw, Bot, Target } from 'lucide-react';
+import { Brain, Search, Plus, ChevronRight, Globe2, BookOpen, Zap, AlertCircle, CheckCircle2, Clock, RefreshCw, Bot, Target, ClipboardList, Loader2 } from 'lucide-react';
 import { rescoreLessonsForCountry } from '@/services/alignmentService';
+import {
+  autoGenerateForObjective, regenerateAssessmentsForCurriculumChange,
+  getObjectivesForScope,
+} from '@/services/assessmentService';
 
 const KB_ENTRIES = [
   { id: 1, country: 'Nigeria', category: 'Curriculum Update', title: 'NERDC 2025 Revised Primary Curriculum', content: 'The Nigerian Educational Research and Development Council has updated the primary school curriculum to include digital literacy as a core subject from Primary 3. All lesson notes should now incorporate ICT integration objectives.', date: '2025-12-15', status: 'active', impact: 'high' },
@@ -18,9 +22,10 @@ const KB_ENTRIES = [
 
 interface KnowledgeBaseProps {
   teacherCountry?: string;
+  teacherId?: string;
 }
 
-const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry }) => {
+const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry, teacherId }) => {
   const [searchQuery, setSearchQuery] = useState('');
   const [countryFilter, setCountryFilter] = useState(teacherCountry && teacherCountry !== 'all' ? teacherCountry : 'all');
   const [categoryFilter, setCategoryFilter] = useState('all');
@@ -29,6 +34,11 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry }) => {
   const [syncing, setSyncing] = useState<string | null>(null);
   const [rescoring, setRescoring] = useState<string | null>(null);
   const [rescoreMsg, setRescoreMsg] = useState<string | null>(null);
+  const [generatingAssessment, setGeneratingAssessment] = useState<string | null>(null);
+  const [assessmentMsg, setAssessmentMsg] = useState<string | null>(null);
+  const [objectives, setObjectives] = useState<Array<{ id: string; learning_objective: string; topic: string; subject: string; class_level: string; country: string }>>([]);
+  const [objectivesLoading, setObjectivesLoading] = useState(false);
+  const [objectivesCountry, setObjectivesCountry] = useState<string | null>(null);
 
   const allCountries = [...new Set(KB_ENTRIES.map(e => e.country))];
   const allCategories = [...new Set(KB_ENTRIES.map(e => e.category))];
@@ -52,6 +62,14 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry }) => {
     setRescoreMsg(null);
     try {
       const { rescored, errors } = await rescoreLessonsForCountry(entry.country);
+      // Also regenerate assessments in background when curriculum changes
+      regenerateAssessmentsForCurriculumChange(entry.country, entry.category === 'Assessment' ? undefined : undefined)
+        .then(count => {
+          if (count > 0) {
+            setRescoreMsg(prev => prev ? `${prev} Also regenerated ${count} assessment${count !== 1 ? 's' : ''}.` : `Regenerated ${count} assessment${count !== 1 ? 's' : ''} for ${entry.country}.`);
+          }
+        })
+        .catch(() => {});
       setRescoreMsg(
         rescored > 0
           ? `Rescored ${rescored} lesson${rescored !== 1 ? 's' : ''} for ${entry.country}.`
@@ -63,7 +81,43 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry }) => {
       setRescoreMsg('Rescore failed. Please try again.');
     } finally {
       setRescoring(null);
-      setTimeout(() => setRescoreMsg(null), 5000);
+      setTimeout(() => setRescoreMsg(null), 8000);
+    }
+  };
+
+  const loadObjectives = async (country: string) => {
+    if (objectivesCountry === country && objectives.length > 0) return;
+    setObjectivesLoading(true);
+    try {
+      // Aggregate objectives across subjects for this country
+      const subjects = ['Mathematics', 'English Language', 'Basic Science', 'Social Studies'];
+      const all: any[] = [];
+      for (const subject of subjects) {
+        const rows = await getObjectivesForScope(country, subject, '');
+        all.push(...rows.map(r => ({ ...r, subject, country })));
+      }
+      setObjectives(all.slice(0, 20));
+      setObjectivesCountry(country);
+    } catch { /* silent */ } finally {
+      setObjectivesLoading(false);
+    }
+  };
+
+  const handleGenerateFromObjective = async (
+    obj: { id: string; learning_objective: string; topic: string; subject: string; class_level: string; country: string },
+  ) => {
+    if (!teacherId) return;
+    setGeneratingAssessment(obj.id);
+    setAssessmentMsg(null);
+    try {
+      const packageId = await autoGenerateForObjective(obj, teacherId);
+      setAssessmentMsg(packageId
+        ? `Quiz generated for "${obj.topic}"! Check your Assessments tab.`
+        : 'Could not generate assessment. Please try again.'
+      );
+    } finally {
+      setGeneratingAssessment(null);
+      setTimeout(() => setAssessmentMsg(null), 6000);
     }
   };
 
@@ -206,25 +260,78 @@ const KnowledgeBase: React.FC<KnowledgeBaseProps> = ({ teacherCountry }) => {
                         <CheckCircle2 className="w-3.5 h-3.5 flex-shrink-0" /> {rescoreMsg}
                       </div>
                     )}
+                    {assessmentMsg && selectedEntry?.id === entry.id && (
+                      <div className="flex items-center gap-2 mb-3 px-3 py-2 bg-violet-50 text-violet-700 rounded-lg text-xs">
+                        <ClipboardList className="w-3.5 h-3.5 flex-shrink-0" /> {assessmentMsg}
+                      </div>
+                    )}
 
                     <div className="flex items-center gap-2 flex-wrap">
                       <button
-                        onClick={() => handleRescore(entry)}
+                        onClick={e => { e.stopPropagation(); handleRescore(entry); }}
                         disabled={rescoring === String(entry.id)}
                         className="flex items-center gap-1.5 px-3 py-2 bg-emerald-50 text-emerald-700 rounded-lg text-xs font-medium hover:bg-emerald-100 transition-all disabled:opacity-50"
                       >
                         {rescoring === String(entry.id)
-                          ? <><RefreshCw className="w-3 h-3 animate-spin" /> Rescoring…</>
+                          ? <><RefreshCw className="w-3 h-3 animate-spin" /> Rescoring + Regenerating…</>
                           : <><Target className="w-3 h-3" /> Rescore {entry.country} Lessons</>
                         }
                       </button>
                       <button
-                        onClick={() => setCountryFilter(entry.country)}
+                        onClick={e => { e.stopPropagation(); setCountryFilter(entry.country); }}
                         className="flex items-center gap-1.5 px-3 py-2 bg-blue-50 text-blue-700 rounded-lg text-xs font-medium hover:bg-blue-100 transition-all"
                       >
                         <AlertCircle className="w-3 h-3" /> Filter to {entry.country}
                       </button>
+                      {teacherId && (
+                        <button
+                          onClick={e => { e.stopPropagation(); loadObjectives(entry.country); }}
+                          className="flex items-center gap-1.5 px-3 py-2 bg-violet-50 text-violet-700 rounded-lg text-xs font-medium hover:bg-violet-100 transition-all"
+                        >
+                          <ClipboardList className="w-3 h-3" /> Generate from Objectives
+                        </button>
+                      )}
                     </div>
+
+                    {/* Curriculum objectives list with per-objective generate button */}
+                    {objectivesCountry === entry.country && teacherId && (
+                      <div className="mt-4 border-t border-gray-100 pt-4">
+                        <p className="text-xs font-semibold text-gray-600 mb-2 flex items-center gap-1">
+                          <Target className="w-3.5 h-3.5" /> Curriculum Objectives — {entry.country}
+                        </p>
+                        {objectivesLoading ? (
+                          <div className="flex items-center gap-2 text-xs text-gray-400 py-2">
+                            <Loader2 className="w-3.5 h-3.5 animate-spin" /> Loading objectives…
+                          </div>
+                        ) : objectives.length === 0 ? (
+                          <p className="text-xs text-gray-400">No objectives in database for {entry.country}.</p>
+                        ) : (
+                          <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1">
+                            {objectives.map(obj => (
+                              <div key={obj.id}
+                                className="flex items-start gap-2 px-3 py-2 bg-gray-50 rounded-lg">
+                                <div className="flex-1 min-w-0">
+                                  <p className="text-xs font-medium text-gray-700">{obj.topic}</p>
+                                  <p className="text-xs text-gray-500 truncate">{obj.learning_objective}</p>
+                                  <p className="text-[10px] text-gray-400">{obj.subject}</p>
+                                </div>
+                                <button
+                                  onClick={e => { e.stopPropagation(); handleGenerateFromObjective(obj); }}
+                                  disabled={generatingAssessment === obj.id}
+                                  className="flex items-center gap-1 px-2 py-1 bg-violet-600 text-white rounded-lg text-[10px] font-medium hover:bg-violet-700 transition-all disabled:opacity-50 flex-shrink-0"
+                                >
+                                  {generatingAssessment === obj.id
+                                    ? <Loader2 className="w-3 h-3 animate-spin" />
+                                    : <ClipboardList className="w-3 h-3" />
+                                  }
+                                  Quiz
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

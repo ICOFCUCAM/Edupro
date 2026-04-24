@@ -12,6 +12,7 @@ import {
   getCountryAlignmentStats, alignLessonDual, extractTextFromFile,
   DualAlignmentResult,
 } from '@/services/alignmentService';
+import { autoGenerateForLesson } from '@/services/assessmentService';
 import AlignmentBadge from '@/components/AlignmentBadge';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
@@ -132,15 +133,26 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
         try {
           const text = await extractTextFromFile(file);
           if (text.trim().length > 80) {
-            // Use school knowledge items as scheme context
             const knowledgeItems = await getSchoolKnowledgeItems(organization.id);
+            // Alignment check
             const dual = await alignLessonDual(
               text, organization.country, '', '', knowledgeItems
             );
             setUploadAlignment(dual);
+            // Infer topic from file name for auto-generation
+            const topicGuess = file.name.replace(/\.[^.]+$/, '').replace(/[-_]/g, ' ');
+            autoGenerateForLesson({
+              country:       organization.country,
+              subject:       'General',
+              classLevel:    '',
+              topic:         topicGuess,
+              teacherId:     userId,
+              organizationId: organization.id,
+              triggerType:   'lesson_upload',
+            }).catch(() => {});
           }
         } catch {
-          // Alignment on upload is best-effort; silently ignore
+          // Best-effort; silently ignore
         }
       }
     } else {

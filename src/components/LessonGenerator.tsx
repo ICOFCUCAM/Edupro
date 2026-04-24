@@ -6,6 +6,7 @@ import { saveLessonOffline, enqueueUpload } from '@/lib/offlineDB';
 import { getUserOrganizations, Organization } from '@/services/organizationService';
 import { buildSchoolContextPrompt } from '@/services/schoolContextService';
 import { alignLessonDual, saveAlignmentScore, extractTextFromLessonNote, AlignmentResult, DualAlignmentResult } from '@/services/alignmentService';
+import { autoGenerateForLesson } from '@/services/assessmentService';
 import { getSchoolKnowledgeItems } from '@/services/organizationService';
 import AlignmentBadge from '@/components/AlignmentBadge';
 
@@ -206,6 +207,19 @@ const LessonGenerator: React.FC<LessonGeneratorProps> = ({ teacherId, onLessonSa
             lessonId, formData.country, formData.subject, formData.level,
             dualAlignment.national, dualAlignment.school
           );
+        }
+        // Auto-generate class exercise + homework in background (non-blocking)
+        if (teacherId) {
+          autoGenerateForLesson({
+            country: formData.country,
+            subject: formData.subject,
+            classLevel: formData.level,
+            topic: formData.topic,
+            language: formData.language === 'English' ? 'en' : formData.language.slice(0, 2).toLowerCase(),
+            teacherId,
+            sourceLessonId: lessonId,
+            triggerType: 'lesson_save',
+          }).catch(() => {});
         }
       }
 
