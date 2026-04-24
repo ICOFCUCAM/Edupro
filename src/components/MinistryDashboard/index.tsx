@@ -9,6 +9,9 @@ import { getChildOrganizations, getOrganizationStats, Organization } from '@/ser
 import { getCountryAlignmentStats } from '@/services/alignmentService';
 import { getMinistryQuestionBank, type MinistryQuestionBankItem } from '@/services/assessmentService';
 import { getNationalPerformance } from '@/services/performanceService';
+import { compareTextbooksForMinistry, type MinistryComparisonRow } from '@/services/textbookService';
+import TextbookLibrary from '@/components/TextbookLibrary';
+import { BookMarked } from 'lucide-react';
 import { SUBJECTS } from '@/lib/constants';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer,
@@ -30,7 +33,9 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     avg_score: number; total_lessons: number; full: number; partial: number; needs_improvement: number;
   } | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank' | 'national-mastery'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | 'districts' | 'alerts' | 'question-bank' | 'national-mastery' | 'textbook-eval'>('overview');
+  const [tbComparison, setTbComparison]   = useState<MinistryComparisonRow[]>([]);
+  const [tbCompLoading, setTbCompLoading] = useState(false);
 
   // National mastery state
   const [nationalPerf, setNationalPerf] = useState<{ subject: string; average_score: number; district_count: number; student_count: number }[]>([]);
@@ -164,6 +169,7 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
     { id: 'districts'        as const, label: 'Districts',        icon: Building2 },
     { id: 'national-mastery' as const, label: 'National Mastery', icon: Target },
     { id: 'question-bank'    as const, label: 'Question Bank',    icon: ClipboardList },
+    { id: 'textbook-eval'    as const, label: 'Textbook Evaluation', icon: BookMarked },
     { id: 'alerts'           as const, label: `Alerts${alerts.length ? ` (${alerts.length})` : ''}`, icon: Bell },
   ];
 
@@ -211,6 +217,13 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
             setActiveTab(tab.id);
             if (tab.id === 'question-bank' && qbItems.length === 0) loadQuestionBank();
             if (tab.id === 'national-mastery') loadNationalPerformance();
+            if (tab.id === 'textbook-eval' && tbComparison.length === 0) {
+              setTbCompLoading(true);
+              compareTextbooksForMinistry(organization.country ?? '').then(rows => {
+                setTbComparison(rows);
+                setTbCompLoading(false);
+              }).catch(() => setTbCompLoading(false));
+            }
           }}
             className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-medium transition-all whitespace-nowrap ${
               activeTab === tab.id ? 'bg-blue-50 text-blue-700' : 'text-gray-500 hover:bg-gray-50'
@@ -670,6 +683,74 @@ const MinistryDashboard: React.FC<MinistryDashboardProps> = ({ organization, onD
               ))}
             </div>
           )}
+        </div>
+      )}
+      {/* ── Textbook Evaluation ── */}
+      {activeTab === 'textbook-eval' && (
+        <div className="space-y-6">
+          {/* Ministry comparison table */}
+          {tbCompLoading ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-blue-500" />
+            </div>
+          ) : tbComparison.length > 0 ? (
+            <div className="bg-white rounded-2xl border border-gray-100 overflow-hidden">
+              <div className="px-6 py-4 border-b border-gray-100">
+                <h3 className="font-bold text-gray-900">Curriculum Coverage by Textbook</h3>
+                <p className="text-sm text-gray-500 mt-0.5">Ministry view — ranked by curriculum coverage</p>
+              </div>
+              <div className="divide-y divide-gray-50">
+                {tbComparison.map((row, i) => (
+                  <div key={row.textbook_id} className="px-6 py-4 flex items-center gap-4">
+                    <span className="text-lg font-bold text-gray-300 w-6 text-right flex-shrink-0">#{i + 1}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-gray-900 truncate">{row.title}</p>
+                      <div className="flex items-center gap-3 mt-1">
+                        <span className="text-xs text-gray-500">{row.chapter_count} chapters</span>
+                        <span className="text-xs text-gray-500">•</span>
+                        <span className="text-xs text-gray-500">{row.missing_count} missing objectives</span>
+                        {row.extra_topics_count > 0 && (
+                          <>
+                            <span className="text-xs text-gray-500">•</span>
+                            <span className="text-xs text-amber-500">{row.extra_topics_count} extra topics</span>
+                          </>
+                        )}
+                      </div>
+                      <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+                        <div
+                          className={`h-full rounded-full ${
+                            row.coverage_percentage >= 80 ? 'bg-emerald-500' :
+                            row.coverage_percentage >= 60 ? 'bg-blue-500' :
+                            row.coverage_percentage >= 40 ? 'bg-amber-400' : 'bg-red-400'
+                          }`}
+                          style={{ width: `${row.coverage_percentage}%` }}
+                        />
+                      </div>
+                    </div>
+                    <span className={`text-xl font-bold px-3 py-1 rounded-xl border flex-shrink-0 ${
+                      row.coverage_percentage >= 80 ? 'text-emerald-600 bg-emerald-50 border-emerald-200' :
+                      row.coverage_percentage >= 60 ? 'text-blue-600 bg-blue-50 border-blue-200' :
+                      row.coverage_percentage >= 40 ? 'text-amber-600 bg-amber-50 border-amber-200' :
+                                                      'text-red-600 bg-red-50 border-red-200'
+                    }`}>
+                      {row.coverage_percentage}%
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ) : null}
+
+          {/* Upload ministry textbooks for evaluation */}
+          <div className="bg-white rounded-2xl border border-gray-100 p-6">
+            <h3 className="font-bold text-gray-900 mb-1">Evaluate a Textbook</h3>
+            <p className="text-sm text-gray-500 mb-4">Upload a candidate textbook to check curriculum coverage before approval.</p>
+            <TextbookLibrary
+              organizationId={organization.id}
+              teacherId={''}
+              country={organization.country ?? ''}
+            />
+          </div>
         </div>
       )}
     </div>

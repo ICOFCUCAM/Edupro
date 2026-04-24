@@ -15,6 +15,8 @@ import {
 import { autoGenerateForLesson } from '@/services/assessmentService';
 import AlignmentBadge from '@/components/AlignmentBadge';
 import ClassAnalyticsDashboard from '@/components/ClassAnalyticsDashboard';
+import TextbookLibrary from '@/components/TextbookLibrary';
+import { BookMarked } from 'lucide-react';
 import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 
 interface SchoolDashboardProps {
@@ -31,7 +33,7 @@ const VISIBILITY_COLOR = {
   general: 'bg-emerald-100 text-emerald-700',
 };
 
-type Tab = 'overview' | 'lessons' | 'teachers' | 'knowledge' | 'performance';
+type Tab = 'overview' | 'lessons' | 'teachers' | 'knowledge' | 'performance' | 'textbooks';
 
 const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId, userRole }) => {
   const [stats, setStats] = useState({ memberCount: 0, lessonCount: 0, knowledgeCount: 0, childCount: 0 });
@@ -172,6 +174,7 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
     ...(isAdmin ? [{ id: 'teachers' as Tab, label: 'Teacher Analytics', icon: Users }] : []),
     { id: 'knowledge', label: `School Knowledge (${knowledgeItems.length})`, icon: Brain },
     { id: 'performance', label: 'Performance Analytics', icon: Target },
+    { id: 'textbooks', label: 'Textbook Library', icon: BookMarked },
   ];
 
   if (loading) {
@@ -573,6 +576,14 @@ const SchoolDashboard: React.FC<SchoolDashboardProps> = ({ organization, userId,
           organizationId={organization.id}
           teacherId={userId}
           organizationCountry={organization.country}
+        />
+      )}
+
+      {activeTab === 'textbooks' && (
+        <TextbookLibrary
+          organizationId={organization.id}
+          teacherId={userId}
+          country={organization.country ?? ''}
         />
       )}
     </div>

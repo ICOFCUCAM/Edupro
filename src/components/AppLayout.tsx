@@ -17,6 +17,7 @@ import UserDashboard from './UserDashboard';
 import OrganizationHub from './OrganizationHub';
 import AssessmentGenerator from './AssessmentGenerator';
 import VoiceAssistant from './VoiceAssistant';
+import TextbookLibrary from './TextbookLibrary';
 
 // Pages that require authentication
 const PROTECTED_PAGES: Record<string, string> = {
@@ -30,6 +31,7 @@ const PROTECTED_PAGES: Record<string, string> = {
   'organizations': 'Organization Hub',
   'assessments': 'Assessment Generator',
   'my-assessments': 'My Assessments',
+  'textbook-library': 'Textbook Library',
 };
 
 const AppLayout: React.FC = () => {
@@ -203,6 +205,18 @@ const AppLayout: React.FC = () => {
             teacherCountry={profile?.country}
             onNavigate={handleNavigate}
           />
+        );
+
+      case 'textbook-library':
+        return (
+          <div className="max-w-4xl mx-auto px-4 py-8">
+            <TextbookLibrary
+              organizationId={profile?.organization_id ?? ''}
+              teacherId={profile?.id ?? user?.id ?? ''}
+              country={profile?.country ?? 'Nigeria'}
+              onNavigate={handleNavigate}
+            />
+          </div>
         );
 
       case 'pricing':
